@@ -82,6 +82,7 @@ struct BoardView: View {
         }
         .focusable()
         .focused($isBoardFocused)
+        .focusEffectDisabled()  // Disable default blue focus ring - we handle selection visually on cards
         .onAppear {
             // Auto-focus the board when it appears
             isBoardFocused = true
