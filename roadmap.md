@@ -43,123 +43,125 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 2. Testing board operations in memory
 3. Swapping persistence layer if needed
 
-## Phase 1: Core Data Model & Parsing
+## Phase 1: Core Data Model & Parsing ✅
 
 **Goal:** Parse and serialize card markdown files with full round-trip fidelity.
 
 ### 1.1 Card Model
-- [ ] Define `Card` struct with all fields (id, title, column, position, dates, labels)
-- [ ] Define `Column` enum or struct (flexible for custom columns later)
-- [ ] Define `Board` struct (title, columns, settings)
+- [x] Define `Card` struct with all fields (id, title, column, position, dates, labels)
+- [x] Define `Column` enum or struct (flexible for custom columns later)
+- [x] Define `Board` struct (title, columns, settings)
 
 ### 1.2 YAML Frontmatter Parser
-- [ ] **Test:** Parse minimal frontmatter (id, title, column, position)
-- [ ] **Test:** Parse dates (ISO8601 format)
-- [ ] **Test:** Parse labels array
-- [ ] **Test:** Handle missing optional fields gracefully
-- [ ] **Test:** Extract markdown body after frontmatter
-- [ ] **Implement:** `FrontmatterParser` that handles all cases
+- [x] **Test:** Parse minimal frontmatter (id, title, column, position)
+- [x] **Test:** Parse dates (ISO8601 format)
+- [x] **Test:** Parse labels array
+- [x] **Test:** Handle missing optional fields gracefully
+- [x] **Test:** Extract markdown body after frontmatter
+- [x] **Implement:** `FrontmatterParser` that handles all cases
 
 ### 1.3 Card Serialization
-- [ ] **Test:** Serialize card back to markdown
-- [ ] **Test:** Round-trip: parse → serialize → parse = identical
-- [ ] **Test:** Preserve markdown body content exactly
-- [ ] **Implement:** `Card.toMarkdown()` method
+- [x] **Test:** Serialize card back to markdown
+- [x] **Test:** Round-trip: parse → serialize → parse = identical
+- [x] **Test:** Preserve markdown body content exactly
+- [x] **Implement:** `Card.toMarkdown()` method
 
 ### 1.4 Board File Parser
-- [ ] **Test:** Parse board.md with title and column definitions
-- [ ] **Test:** Handle custom column order
-- [ ] **Implement:** `BoardParser`
+- [x] **Test:** Parse board.md with title and column definitions
+- [x] **Test:** Handle custom column order
+- [x] **Implement:** `BoardParser`
 
 **Deliverable:** Can parse any valid card/board file, serialize it back, get identical result.
 
-## Phase 2: File System Operations
+## Phase 2: File System Operations ✅
 
 **Goal:** Read board from disk, write changes, watch for external modifications.
 
 ### 2.1 Board Loading
-- [ ] **Test:** Load board.md and all cards from directory
-- [ ] **Test:** Handle missing cards/ directory (create it)
-- [ ] **Test:** Handle malformed card files (log warning, skip)
-- [ ] **Implement:** `BoardLoader.load(from: URL) -> Board`
+- [x] **Test:** Load board.md and all cards from directory
+- [x] **Test:** Handle missing cards/ directory (create it)
+- [x] **Test:** Handle malformed card files (log warning, skip)
+- [x] **Implement:** `BoardLoader.load(from: URL) -> Board`
 
 ### 2.2 Card Persistence
-- [ ] **Test:** Save new card creates file with correct name
-- [ ] **Test:** Update card modifies existing file
-- [ ] **Test:** Delete card removes file (or moves to archive/)
-- [ ] **Implement:** `CardWriter` with atomic writes (write to temp, rename)
+- [x] **Test:** Save new card creates file with correct name
+- [x] **Test:** Update card modifies existing file
+- [x] **Test:** Delete card removes file (or moves to archive/)
+- [x] **Implement:** `CardWriter` with atomic writes (write to temp, rename)
 
 ### 2.3 File Watching
-- [ ] **Test:** Detect external file creation
-- [ ] **Test:** Detect external file modification
-- [ ] **Test:** Detect external file deletion
-- [ ] **Implement:** `FileWatcher` using DispatchSource or FSEvents
-- [ ] **Implement:** Debounce rapid changes (100ms window)
+- [x] **Test:** Detect external file creation
+- [x] **Test:** Detect external file modification
+- [x] **Test:** Detect external file deletion
+- [x] **Implement:** `FileWatcher` using DispatchSource or FSEvents
+- [x] **Implement:** Debounce rapid changes (100ms window)
 
 ### 2.4 Conflict Handling
-- [ ] Define strategy: External wins? Merge? Prompt user?
-- [ ] **Implement:** Reload changed cards, update in-memory state
+- [x] Define strategy: External wins? Merge? Prompt user?
+- [x] **Implement:** Reload changed cards, update in-memory state
 
 **Deliverable:** Can open a board folder, see all cards, external edits appear automatically.
 
-## Phase 3: Basic UI
+## Phase 3: Basic UI ✅
 
 **Goal:** Display board with columns and cards, support basic interactions.
 
 ### 3.1 Main Window
-- [ ] Window with board title in toolbar
-- [ ] Horizontal scroll for many columns
-- [ ] Column headers with card counts
+- [x] Window with board title in toolbar
+- [x] Horizontal scroll for many columns
+- [x] Column headers with card counts
 
 ### 3.2 Column View
-- [ ] Vertical list of cards
-- [ ] Card preview (title, first line of body, label chips)
-- [ ] "Add card" button at bottom
+- [x] Vertical list of cards
+- [x] Card preview (title, first line of body, label chips)
+- [x] "Add card" button at bottom
 
 ### 3.3 Card Drag & Drop
-- [ ] Drag cards within column (reorder)
-- [ ] Drag cards between columns
-- [ ] Visual feedback during drag (insertion indicator)
-- [ ] Update position fields, save to disk
+- [x] Drag cards within column (reorder)
+- [x] Drag cards between columns
+- [x] Visual feedback during drag (insertion indicator)
+- [x] Update position fields, save to disk
 
 ### 3.4 Card Quick Actions
-- [ ] Click card to select
-- [ ] Double-click to edit
+- [x] Click card to select
+- [x] Double-click to edit
 - [ ] Delete key to remove (with confirmation)
 - [ ] Keyboard navigation (arrows, tab between columns)
 
 **Deliverable:** Functional Kanban board, drag cards around, changes persist to disk.
 
-## Phase 4: Card Editing
+## Phase 4: Card Editing ✅
 
 **Goal:** Full card editing with rich content support.
 
 ### 4.1 Card Detail View
-- [ ] Modal or sidebar panel for editing
-- [ ] Title field (large, prominent)
-- [ ] Column picker dropdown
-- [ ] Labels picker (multi-select, create new)
-- [ ] Created/modified dates (read-only display)
+- [x] Modal or sidebar panel for editing
+- [x] Title field (large, prominent)
+- [x] Column picker dropdown
+- [x] Labels picker (multi-select, create new)
+- [x] Created/modified dates (read-only display)
 
 ### 4.2 Markdown Body Editor
-- [ ] Plain text editor for markdown content
-- [ ] Monospace font, reasonable size
+- [x] Plain text editor for markdown content
+- [x] Monospace font, reasonable size
 - [ ] Basic syntax highlighting (nice-to-have)
-- [ ] Auto-save on changes (debounced)
+- [x] Auto-save on changes (debounced)
 
 ### 4.3 New Card Flow
-- [ ] "Add card" creates card with generated UUID
-- [ ] Focus title field immediately
-- [ ] Escape cancels, Enter confirms (or just blur to save)
+- [x] "Add card" creates card with generated UUID
+- [x] Focus title field immediately
+- [x] Escape cancels, Enter confirms (or just blur to save)
 
 **Deliverable:** Can create and fully edit cards with rich descriptions.
 
-## Phase 5: Polish & Power Features
+## Phase 5: Polish & Power Features (In Progress)
 
 **Goal:** Make it pleasant for daily use.
 
 ### 5.1 Keyboard Shortcuts
-- [ ] `Cmd+N` new card
+- [x] `Cmd+N` new board
+- [x] `Cmd+O` open board
+- [x] `Cmd+W` close board
 - [ ] `Cmd+F` search/filter
 - [ ] Arrow keys navigate cards
 - [ ] `Cmd+1/2/3` move to column 1/2/3
@@ -172,15 +174,18 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [ ] Clear filter shows all
 
 ### 5.3 Multiple Boards
-- [ ] Open folder picker to select board
-- [ ] Recent boards in File menu
-- [ ] Create new board (creates directory structure)
+- [x] Open folder picker to select board
+- [x] Recent boards list (with security-scoped bookmarks)
+- [x] Auto-load last opened board on startup
+- [x] Create new board (creates directory structure)
+- [x] Welcome screen with recent boards sidebar
+- [x] Window close returns to welcome screen (not quit)
 
 ### 5.4 Visual Polish
-- [ ] Card colors based on labels
-- [ ] Smooth drag animations
+- [x] Card colors based on labels
+- [x] Smooth drag animations
 - [ ] Column collapse/expand
-- [ ] Dark mode support
+- [x] Dark mode support (system default)
 
 **Deliverable:** A tool you actually want to use every day.
 

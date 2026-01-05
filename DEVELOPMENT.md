@@ -2,6 +2,8 @@
 
 This document describes the architecture, structure, and implementation details of SimpleKanban.
 
+> **Note:** When updating implementation status in this file, also update the corresponding checkboxes in `roadmap.md` to keep both documents in sync.
+
 ## Overview
 
 SimpleKanban is a native macOS Kanban board application built with Swift/SwiftUI. It stores all data as human-readable markdown files, designed for git-based collaboration and version control.
@@ -214,17 +216,19 @@ archive/2024-01-05-fix-login-bug.md
 - New card creation
 - Label support (display and edit)
 
-### Partially Implemented (Phase 5)
+### Completed (Phase 5 - Polish)
 - Menu commands (Cmd+O, Cmd+N, Cmd+W)
-- Basic drag and drop
+- Recent boards list with security-scoped bookmarks
+- Auto-load last opened board on startup
+- Welcome screen (WelcomeView) with recent boards sidebar
+- Window close behavior: closing board view returns to welcome screen instead of quitting
 
 ### Not Yet Implemented
-- Recent boards list (in progress)
-- Auto-load last board on startup (in progress)
 - Search/filter
-- Full keyboard navigation
-- Card archive UI
+- Full keyboard navigation (arrow keys, Cmd+1/2/3 for columns)
+- Card archive UI (viewing archived cards)
 - Column collapse/expand
+- Dark mode refinements
 
 ## Testing
 

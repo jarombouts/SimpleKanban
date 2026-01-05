@@ -6,6 +6,67 @@
 
 import SwiftUI
 
+// MARK: - App Delegate
+
+/// App delegate to handle macOS-specific app lifecycle events.
+///
+/// Used to:
+/// 1. Ensure the app shows a window when reactivated (clicked in dock)
+/// 2. Intercept window close to show welcome screen instead of quitting
+///
+/// Also acts as NSWindowDelegate to intercept window close events.
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    /// Closure that returns true if a board is currently open.
+    /// Set by SimpleKanbanApp when the view appears.
+    var hasBoardOpen: (() -> Bool)?
+
+    /// Closure to close the current board.
+    /// Set by SimpleKanbanApp when the view appears.
+    var closeBoardHandler: (() -> Void)?
+
+    /// Called when the user clicks the app icon in the dock while the app is running
+    /// but has no visible windows. Returns true to indicate we'll handle showing a window.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        if !flag {
+            // No visible windows - show one
+            // Find any existing window and make it visible
+            if let window = sender.windows.first {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+        return true
+    }
+
+    /// Called when the app becomes active. Ensures at least one window is visible.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        // If no windows are visible, show one
+        if NSApp.windows.filter({ $0.isVisible }).isEmpty {
+            if let window = NSApp.windows.first {
+                window.makeKeyAndOrderFront(nil)
+            }
+        }
+    }
+
+    // MARK: - NSWindowDelegate
+
+    /// Intercepts window close to show welcome screen instead of closing.
+    ///
+    /// When a board is open and the user clicks the red X:
+    /// - Closes the board (switches to welcome view)
+    /// - Returns false to prevent the window from actually closing
+    ///
+    /// When on the welcome screen, allows normal window close.
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if hasBoardOpen?() == true {
+            // Board is open - close the board but keep the window open
+            closeBoardHandler?()
+            return false
+        }
+        // No board open (welcome screen) - allow normal window close
+        return true
+    }
+}
+
 // MARK: - Recent Boards Model
 
 /// A recently opened board, stored with security-scoped bookmark for sandbox access.
@@ -220,6 +281,9 @@ class RecentBoardsManager: ObservableObject {
 
 @main
 struct SimpleKanbanApp: App {
+    /// App delegate for handling macOS lifecycle events like dock icon clicks
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     @State private var store: BoardStore? = nil
     @State private var fileWatcher: FileWatcher? = nil
     @State private var showOpenPanel: Bool = false
@@ -252,15 +316,11 @@ struct SimpleKanbanApp: App {
                     hasAttemptedAutoLoad = true
                     autoLoadLastBoard()
                 }
-            }
-            .onReceive(NotificationCenter.default.publisher(for: NSWindow.willCloseNotification)) { notification in
-                // When the window is closed (red X button), close the board to show welcome screen
-                // This ensures the window stays open with the welcome view instead of being hidden
-                if let window = notification.object as? NSWindow,
-                   window.isKeyWindow,
-                   store != nil {
-                    closeBoard()
-                }
+
+                // Set up window delegate to intercept close button.
+                // This allows us to show the welcome screen instead of closing the window
+                // when the user clicks the red X while a board is open.
+                setupWindowDelegate()
             }
             .alert("Error", isPresented: .constant(errorMessage != nil)) {
                 Button("OK") { errorMessage = nil }
@@ -412,6 +472,31 @@ struct SimpleKanbanApp: App {
         fileWatcher?.stop()
         fileWatcher = nil
         store = nil
+    }
+
+    /// Sets up the window delegate to intercept close button clicks.
+    ///
+    /// This connects the AppDelegate (which is also the window delegate) to
+    /// this view's state, allowing it to:
+    /// - Check if a board is currently open
+    /// - Close the board when the window's X button is clicked
+    /// - Prevent the window from actually closing (showing welcome screen instead)
+    private func setupWindowDelegate() {
+        // Connect the app delegate to our state
+        appDelegate.hasBoardOpen = { [self] in
+            return store != nil
+        }
+        appDelegate.closeBoardHandler = { [self] in
+            closeBoard()
+        }
+
+        // Set the app delegate as the window delegate for all windows
+        // This ensures windowShouldClose is called when the X button is clicked
+        for window in NSApp.windows {
+            if window.delegate !== appDelegate {
+                window.delegate = appDelegate
+            }
+        }
     }
 }
 
