@@ -191,6 +191,16 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [ ] Column collapse/expand
 - [x] Dark mode support (system default)
 
+### 5.5 Multi-Select & Bulk Operations
+- [x] Click to select single card (clears previous selection)
+- [x] Cmd+click to toggle card in/out of selection
+- [x] Shift+click to select range within same column
+- [x] Toolbar buttons for Archive/Delete (always visible)
+- [x] Drag cards onto toolbar buttons
+- [x] Bulk archive with Cmd+Backspace
+- [x] Bulk delete with Delete key (with confirmation)
+- [x] Bulk move with Cmd+1/2/3
+
 **Deliverable:** A tool you actually want to use every day.
 
 ## Future Ideas (Not in Scope)

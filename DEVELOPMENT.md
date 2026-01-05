@@ -35,7 +35,7 @@ SimpleKanban/
 │   ├── BoardStoreTests.swift   # State management tests
 │   └── KeyboardNavigationTests.swift  # Keyboard navigation tests (40+ cases)
 ├── SimpleKanban.xcodeproj/     # Xcode project
-├── TestBoard/                  # Example board for development
+├── SimpleKanbanBacklog/        # Our own backlog (dogfooding)
 ├── LICENSE                     # WTFPL license
 ├── CLAUDE.md                   # AI assistant guidelines
 ├── roadmap.md                  # Implementation plan with progress
@@ -99,8 +99,9 @@ SimpleKanban/
 - `BoardWriter` - save board.md, create new boards
 
 **FileWatcher.swift**
-- Uses `DispatchSource.makeFileSystemObjectSource`
-- Monitors cards/ directory and board.md
+- Uses FSEvents for recursive directory watching
+- Monitors cards/{column}/ subdirectories and board.md
+- Tracks event flags to distinguish creates/modifies/deletes
 - Debounces changes (100ms window)
 - Triggers BoardStore reload methods
 
@@ -232,12 +233,18 @@ archive/2024-01-05-fix-login-bug.md
 - Window close behavior: closing board view returns to welcome screen instead of quitting
 - Full keyboard navigation:
   - Arrow keys to navigate cards (up/down within column, left/right between columns)
-  - Cmd+1/2/3 to move selected card to column
-  - Cmd+Backspace to archive card
+  - Cmd+1/2/3 to move selected card(s) to column
+  - Cmd+Backspace to archive card(s)
   - Enter to open card for editing
-  - Delete to delete card (with confirmation)
+  - Delete to delete card(s) (with confirmation)
   - Tab/Shift+Tab to navigate between columns
   - Escape to clear selection
+- Multi-select:
+  - Click to select single card
+  - Cmd+click to toggle card in/out of selection
+  - Shift+click to select range within same column
+  - Toolbar buttons for bulk archive/delete (also accept drag-and-drop)
+  - Bulk operations work with keyboard shortcuts too
 
 ### Not Yet Implemented
 - Search/filter
@@ -269,7 +276,7 @@ Test coverage:
 1. Open `SimpleKanban.xcodeproj` in Xcode
 2. Select the SimpleKanban scheme
 3. Build and run (Cmd+R)
-4. Use TestBoard/ for development testing
+4. Use SimpleKanbanBacklog/ for development testing (it's our actual backlog)
 
 ## Code Style
 

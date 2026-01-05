@@ -61,15 +61,28 @@ SimpleKanban is built for keyboard-driven workflows:
 |-----|--------|
 | `↑` `↓` | Navigate cards in column |
 | `←` `→` | Navigate between columns |
-| `Tab` | Next column |
+| `Tab` / `Shift+Tab` | Next / previous column |
 | `Enter` | Edit selected card |
-| `Delete` | Delete card (with confirmation) |
-| `Cmd+1/2/3` | Move card to column 1/2/3 |
-| `Cmd+Backspace` | Archive card |
+| `Delete` | Delete card(s) (with confirmation) |
+| `Cmd+1/2/3` | Move card(s) to column 1/2/3 |
+| `Cmd+Backspace` | Archive card(s) |
 | `Escape` | Clear selection |
 | `Cmd+N` | New board |
 | `Cmd+O` | Open board |
 | `Cmd+W` | Close board |
+
+### Multi-Select
+
+Select multiple cards to move, archive, or delete them together:
+
+| Action | How |
+|--------|-----|
+| Select single card | Click |
+| Toggle selection | `Cmd+click` |
+| Select range | `Shift+click` (same column only) |
+| Bulk archive/delete | Use toolbar buttons or keyboard shortcuts |
+
+You can also drag cards onto the Archive or Delete buttons in the toolbar.
 
 ### Card Format
 

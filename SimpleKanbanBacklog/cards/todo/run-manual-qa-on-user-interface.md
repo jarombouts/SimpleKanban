@@ -3,7 +3,7 @@ title: Run manual QA on user interface
 column: todo
 position: n
 created: 2026-01-05T10:00:44Z
-modified: 2026-01-05T14:54:19Z
+modified: 2026-01-05T18:05:55Z
 labels: []
 ---
 

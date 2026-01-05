@@ -247,7 +247,13 @@ Cards are stored in subdirectories matching their column IDs, making it easy to 
 
 ### File Watching
 
-Use `DispatchSource.makeFileSystemObjectSource` or `FSEvents` to detect external changes. When a file changes while user is editing that card, prompt: "File changed externally. Reload or keep your changes?"
+Uses FSEvents (`FSEventStreamCreate`) for recursive directory watching. This is necessary because cards are stored in column subdirectories (`cards/{column}/`), and FSEvents can watch an entire directory tree while tracking individual file events.
+
+Key implementation details:
+- Uses `kFSEventStreamCreateFlagFileEvents` for file-level events
+- Tracks event flags (`kFSEventStreamEventFlagItemRemoved`) to distinguish creates/modifies/deletes
+- Debounces rapid changes (100ms window) to avoid thrashing during git operations
+- Does NOT watch `archive/` (those files are write-only)
 
 ### Design Decisions Summary
 
