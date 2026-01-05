@@ -27,6 +27,9 @@ import SwiftUI
 struct BoardView: View {
     @Bindable var store: BoardStore
 
+    /// Git sync handler for the board (nil if not a git repo or not initialized)
+    var gitSync: GitSync?
+
     /// Card currently open in the detail editor sheet
     @State private var editingCard: Card? = nil
 
@@ -223,6 +226,12 @@ struct BoardView: View {
                 } else {
                     Text("\(store.cards.count) cards")
                         .foregroundStyle(.secondary)
+                }
+
+                // Git sync status indicator (if git repo)
+                if let gitSync = gitSync {
+                    Divider()
+                    GitStatusIndicator(gitSync: gitSync)
                 }
             }
         }
@@ -974,5 +983,163 @@ struct DeleteToolbarButton: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isTargeted ? Color.red : Color.clear, lineWidth: 2)
         )
+    }
+}
+
+// MARK: - Git Status Indicator
+
+/// Displays git sync status in the toolbar with push button.
+///
+/// Shows status icon and text. When there are unpushed commits,
+/// displays a Push button with confirmation dialog.
+struct GitStatusIndicator: View {
+    @Bindable var gitSync: GitSync
+
+    /// Whether to show the push confirmation dialog
+    @State private var showPushConfirmation: Bool = false
+
+    /// Error message to display in alert
+    @State private var errorMessage: String?
+
+    /// Whether to show error alert
+    @State private var showErrorAlert: Bool = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Status indicator
+            statusView
+
+            // Push button (only when we have commits to push)
+            if gitSync.status.canPush {
+                Button(action: {
+                    showPushConfirmation = true
+                }) {
+                    Label("Push", systemImage: "arrow.up.circle")
+                }
+                .help("Push local commits to remote")
+            }
+        }
+        .alert("Push to Remote", isPresented: $showPushConfirmation) {
+            Button("Cancel", role: .cancel) {}
+            Button("Push") {
+                Task {
+                    await performPush()
+                }
+            }
+        } message: {
+            if case .ahead(let count) = gitSync.status {
+                Text("Push \(count) commit\(count == 1 ? "" : "s") to origin?")
+            } else if case .diverged(let ahead, _) = gitSync.status {
+                Text("Push \(ahead) commit\(ahead == 1 ? "" : "s") to origin?")
+            } else {
+                Text("Push local commits to origin?")
+            }
+        }
+        .alert("Git Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            if let error = errorMessage {
+                Text(error)
+            }
+        }
+    }
+
+    /// The status icon and text
+    @ViewBuilder
+    private var statusView: some View {
+        switch gitSync.status {
+        case .notGitRepo, .noRemote:
+            // Don't show anything
+            EmptyView()
+
+        case .synced:
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+                Text("Synced")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Local is up to date with remote")
+
+        case .behind(let count):
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.blue)
+                Text("\(count) behind")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Remote has \(count) new commit\(count == 1 ? "" : "s") — auto-pulling")
+
+        case .ahead(let count):
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.up.circle.fill")
+                    .foregroundStyle(.yellow)
+                Text("\(count) ahead")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("\(count) local commit\(count == 1 ? "" : "s") to push")
+
+        case .diverged(let ahead, let behind):
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.up.arrow.down.circle.fill")
+                    .foregroundStyle(.orange)
+                Text("\(ahead)↑ \(behind)↓")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("\(ahead) local, \(behind) remote commits — push to sync")
+
+        case .uncommitted:
+            HStack(spacing: 4) {
+                Image(systemName: "circle.lefthalf.filled")
+                    .foregroundStyle(.gray)
+                Text("Uncommitted")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Uncommitted changes — commit to enable sync")
+
+        case .syncing:
+            HStack(spacing: 4) {
+                ProgressView()
+                    .scaleEffect(0.6)
+                Text("Syncing...")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+        case .conflict:
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.red)
+                Text("Conflict")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Merge conflict — resolve in terminal")
+
+        case .error(let message):
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.circle.fill")
+                    .foregroundStyle(.red)
+                Text("Error")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .help("Git error: \(message)")
+        }
+    }
+
+    /// Performs the push operation
+    private func performPush() async {
+        do {
+            try await gitSync.push()
+        } catch {
+            errorMessage = error.localizedDescription
+            showErrorAlert = true
+        }
     }
 }

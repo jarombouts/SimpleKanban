@@ -1,9 +1,9 @@
 ---
 title: Add markdown syntax highlighting
 column: todo
-position: c
+position: y
 created: 2026-01-05T18:30:00Z
-modified: 2026-01-05T18:41:00Z
+modified: 2026-01-05T19:08:12Z
 labels: [feature]
 ---
 

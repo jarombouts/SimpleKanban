@@ -286,6 +286,8 @@ struct SimpleKanbanApp: App {
 
     @State private var store: BoardStore? = nil
     @State private var fileWatcher: FileWatcher? = nil
+    @State private var gitSync: GitSync? = nil
+    @State private var syncTimer: Timer? = nil
     @State private var showOpenPanel: Bool = false
     @State private var errorMessage: String? = nil
     @State private var hasAttemptedAutoLoad: Bool = false
@@ -295,7 +297,7 @@ struct SimpleKanbanApp: App {
         WindowGroup {
             Group {
                 if let store = store {
-                    BoardView(store: store)
+                    BoardView(store: store, gitSync: gitSync)
                 } else {
                     WelcomeView(
                         recentBoards: recentBoardsManager.recentBoards,
@@ -388,11 +390,15 @@ struct SimpleKanbanApp: App {
 
     /// Loads a board from disk and starts watching for changes.
     ///
-    /// Also records the board in the recent boards list.
+    /// Also records the board in the recent boards list and sets up git sync
+    /// if the board is in a git repository.
     private func loadBoard(from url: URL) {
-        // Stop existing watcher
+        // Stop existing watchers and timers
         fileWatcher?.stop()
         fileWatcher = nil
+        syncTimer?.invalidate()
+        syncTimer = nil
+        gitSync = nil
 
         do {
             let newStore: BoardStore = try BoardStore(url: url)
@@ -411,8 +417,42 @@ struct SimpleKanbanApp: App {
                 // In the future, could show a conflict dialog
                 return true
             }
+
+            // Set up git sync if this is a git repository
+            let newGitSync: GitSync = GitSync(url: url)
+            gitSync = newGitSync
+
+            // Check repository status and start periodic sync
+            Task { @MainActor in
+                await newGitSync.checkRepository()
+
+                // Only start sync timer if it's a valid git repo with a remote
+                if case .notGitRepo = newGitSync.status { return }
+                if case .noRemote = newGitSync.status { return }
+
+                // Start periodic sync every 60 seconds
+                startSyncTimer()
+            }
         } catch {
             errorMessage = "Failed to open board: \(error.localizedDescription)"
+        }
+    }
+
+    /// Starts the periodic git sync timer.
+    ///
+    /// Runs every 60 seconds and calls gitSync.sync() which will:
+    /// - Fetch from remote to update status
+    /// - Auto-pull if working tree is clean and we're behind
+    private func startSyncTimer() {
+        syncTimer?.invalidate()
+
+        // Capture gitSync reference outside the timer closure
+        guard let currentGitSync: GitSync = gitSync else { return }
+
+        syncTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { _ in
+            Task { @MainActor in
+                await currentGitSync.sync()
+            }
         }
     }
 
@@ -471,6 +511,9 @@ struct SimpleKanbanApp: App {
     private func closeBoard() {
         fileWatcher?.stop()
         fileWatcher = nil
+        syncTimer?.invalidate()
+        syncTimer = nil
+        gitSync = nil
         store = nil
     }
 
