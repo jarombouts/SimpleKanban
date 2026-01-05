@@ -125,8 +125,8 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 ### 3.4 Card Quick Actions
 - [x] Click card to select
 - [x] Double-click to edit
-- [ ] Delete key to remove (with confirmation)
-- [ ] Keyboard navigation (arrows, tab between columns)
+- [x] Delete key to remove (with confirmation)
+- [x] Keyboard navigation (arrows, tab between columns)
 
 **Deliverable:** Functional Kanban board, drag cards around, changes persist to disk.
 
@@ -163,9 +163,13 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [x] `Cmd+O` open board
 - [x] `Cmd+W` close board
 - [ ] `Cmd+F` search/filter
-- [ ] Arrow keys navigate cards
-- [ ] `Cmd+1/2/3` move to column 1/2/3
-- [ ] `Cmd+Backspace` archive card
+- [x] Arrow keys navigate cards
+- [x] `Cmd+1/2/3` move to column 1/2/3
+- [x] `Cmd+Backspace` archive card
+- [x] `Enter` open card for editing
+- [x] `Delete` delete card (with confirmation)
+- [x] `Escape` clear selection
+- [x] `Tab/Shift+Tab` navigate between columns
 
 ### 5.2 Search & Filter
 - [ ] Filter bar at top

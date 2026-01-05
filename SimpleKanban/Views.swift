@@ -162,7 +162,8 @@ struct BoardView: View {
         // Check for Cmd+number to move to column
         if keyPress.modifiers.contains(.command) {
             // Cmd+1 through Cmd+9 move to columns
-            if let number = keyPress.key.character?.wholeNumberValue,
+            let keyChar: Character = keyPress.key.character
+            if let number = keyChar.wholeNumberValue,
                number >= 1 && number <= store.board.columns.count {
                 moveSelectedCardToColumn(index: number - 1)
                 return .handled
@@ -361,12 +362,18 @@ struct BoardView: View {
 /// - Scrollable list of card previews
 /// - "Add card" button at bottom
 /// - Drop target for drag & drop
+/// - Selection highlight for keyboard navigation
 struct ColumnView: View {
     let column: Column
     let cards: [Card]
     let labels: [CardLabel]
     let columnWidth: CGFloat
+
+    /// Title of the currently selected card (for keyboard navigation highlight)
+    let selectedCardTitle: String?
+
     let onCardTap: (Card) -> Void
+    let onCardDoubleTap: (Card) -> Void
     let onAddCard: () -> Void
     let onMoveCard: (Card, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
@@ -407,16 +414,26 @@ struct ColumnView: View {
             ScrollView(.vertical, showsIndicators: false) {
                 LazyVStack(spacing: 8) {
                     ForEach(cards, id: \.title) { card in
-                        CardView(card: card, labels: labels)
-                            .onTapGesture {
-                                onCardTap(card)
+                        CardView(
+                            card: card,
+                            labels: labels,
+                            isSelected: selectedCardTitle == card.title
+                        )
+                        .onTapGesture(count: 2) {
+                            onCardDoubleTap(card)
+                        }
+                        .onTapGesture(count: 1) {
+                            onCardTap(card)
+                        }
+                        .draggable(card.title)
+                        .contextMenu {
+                            Button("Edit") {
+                                onCardDoubleTap(card)
                             }
-                            .draggable(card.title)
-                            .contextMenu {
-                                Button("Archive") {
-                                    onArchiveCard(card)
-                                }
+                            Button("Archive") {
+                                onArchiveCard(card)
                             }
+                        }
                     }
                 }
                 .padding(.horizontal, 12)
@@ -450,9 +467,13 @@ struct ColumnView: View {
 /// - Card title (bold)
 /// - First line of body (if any)
 /// - Label chips (colored badges)
+/// - Selection highlight when selected via keyboard
 struct CardView: View {
     let card: Card
     let labels: [CardLabel]
+
+    /// Whether this card is currently selected (keyboard navigation)
+    var isSelected: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -489,6 +510,11 @@ struct CardView: View {
         .padding(10)
         .background(Color(nsColor: .textBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            // Selection highlight ring
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
         .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
     }
 }

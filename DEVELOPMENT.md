@@ -222,10 +222,17 @@ archive/2024-01-05-fix-login-bug.md
 - Auto-load last opened board on startup
 - Welcome screen (WelcomeView) with recent boards sidebar
 - Window close behavior: closing board view returns to welcome screen instead of quitting
+- Full keyboard navigation:
+  - Arrow keys to navigate cards (up/down within column, left/right between columns)
+  - Cmd+1/2/3 to move selected card to column
+  - Cmd+Backspace to archive card
+  - Enter to open card for editing
+  - Delete to delete card (with confirmation)
+  - Tab/Shift+Tab to navigate between columns
+  - Escape to clear selection
 
 ### Not Yet Implemented
 - Search/filter
-- Full keyboard navigation (arrow keys, Cmd+1/2/3 for columns)
 - Card archive UI (viewing archived cards)
 - Column collapse/expand
 - Dark mode refinements
