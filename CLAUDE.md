@@ -174,7 +174,7 @@ New cards start with this content (optional, free-form if omitted):
 [Additional context]
 ```
 
-**cards/{slug}.md** - Individual cards (filename = slugified title):
+**cards/{column}/{slug}.md** - Individual cards stored in column subdirectories:
 
 ```markdown
 ---
@@ -226,13 +226,17 @@ This sorts by completion date in filesystem listings.
 MyBoard/
 ├── board.md          # Board metadata, columns, labels, card template
 ├── cards/
-│   ├── implement-drag-and-drop.md
-│   ├── fix-login-bug.md
-│   └── ...
+│   ├── todo/         # Cards in "To Do" column
+│   │   └── fix-login-bug.md
+│   ├── in-progress/  # Cards in "In Progress" column
+│   │   └── implement-drag-and-drop.md
+│   └── done/         # Cards in "Done" column
 └── archive/          # Archived cards with date prefix
     ├── 2024-01-03-setup-ci-pipeline.md
     └── 2024-01-05-write-readme.md
 ```
+
+Cards are stored in subdirectories matching their column IDs, making it easy to see card status from the terminal.
 
 ### Frameworks
 

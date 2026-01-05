@@ -42,12 +42,16 @@ The folder structure looks like this:
 MyProject/
 ├── board.md              # Board settings, columns, labels
 ├── cards/
-│   ├── fix-login-bug.md
-│   ├── add-dark-mode.md
-│   └── ...
-└── archive/              # Completed cards
+│   ├── todo/             # Cards in "To Do" column
+│   │   └── fix-login-bug.md
+│   ├── in-progress/      # Cards in "In Progress" column
+│   │   └── add-dark-mode.md
+│   └── done/             # Cards in "Done" column
+└── archive/              # Archived cards
     └── 2026-01-05-setup-ci.md
 ```
+
+Cards are stored in subdirectories matching their column IDs, making it easy to see which cards are in which column from the terminal with `ls cards/`.
 
 ### Keyboard Shortcuts
 

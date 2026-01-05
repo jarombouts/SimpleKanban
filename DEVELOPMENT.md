@@ -135,7 +135,9 @@ labels:
 Optional template for new cards
 ```
 
-### cards/{slug}.md
+### cards/{column}/{slug}.md
+
+Cards are stored in subdirectories matching their column ID:
 ```yaml
 ---
 title: Fix login bug
