@@ -25,7 +25,7 @@ struct BoardLoaderTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    @Test("Loads board with cards from directory")
+    @Test("Loads board with cards from column subdirectories")
     func loadBoardWithCards() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -43,11 +43,11 @@ struct BoardLoaderTests {
             """
         try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
 
-        // Create cards directory
-        let cardsDir: URL = tempDir.appendingPathComponent("cards")
-        try FileManager.default.createDirectory(at: cardsDir, withIntermediateDirectories: true)
+        // Create column subdirectory under cards/
+        let todoDir: URL = tempDir.appendingPathComponent("cards/todo")
+        try FileManager.default.createDirectory(at: todoDir, withIntermediateDirectories: true)
 
-        // Create a card
+        // Create a card in the todo column directory
         let cardMarkdown: String = """
             ---
             title: Test Card
@@ -60,7 +60,7 @@ struct BoardLoaderTests {
 
             Card body here.
             """
-        try cardMarkdown.write(to: cardsDir.appendingPathComponent("test-card.md"), atomically: true, encoding: .utf8)
+        try cardMarkdown.write(to: todoDir.appendingPathComponent("test-card.md"), atomically: true, encoding: .utf8)
 
         // Load the board
         let loadedBoard: LoadedBoard = try BoardLoader.load(from: tempDir)
@@ -72,7 +72,7 @@ struct BoardLoaderTests {
         #expect(loadedBoard.cards[0].column == "todo")
     }
 
-    @Test("Creates cards directory if missing")
+    @Test("Creates column subdirectories if missing")
     func createsMissingCardsDirectory() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -84,23 +84,31 @@ struct BoardLoaderTests {
             columns:
               - id: todo
                 name: To Do
+              - id: done
+                name: Done
             ---
             """
         try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
 
-        // Load should succeed and create cards directory
+        // Load should succeed and create column subdirectories
         let loadedBoard: LoadedBoard = try BoardLoader.load(from: tempDir)
 
         #expect(loadedBoard.board.title == "Empty Board")
         #expect(loadedBoard.cards.isEmpty)
 
-        // Verify cards directory was created
+        // Verify column directories were created
         var isDirectory: ObjCBool = false
-        let exists: Bool = FileManager.default.fileExists(
-            atPath: tempDir.appendingPathComponent("cards").path,
+        let todoExists: Bool = FileManager.default.fileExists(
+            atPath: tempDir.appendingPathComponent("cards/todo").path,
             isDirectory: &isDirectory
         )
-        #expect(exists && isDirectory.boolValue)
+        #expect(todoExists && isDirectory.boolValue)
+
+        let doneExists: Bool = FileManager.default.fileExists(
+            atPath: tempDir.appendingPathComponent("cards/done").path,
+            isDirectory: &isDirectory
+        )
+        #expect(doneExists && isDirectory.boolValue)
     }
 
     @Test("Throws on missing board.md")
@@ -131,9 +139,9 @@ struct BoardLoaderTests {
             """
         try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
 
-        // Create cards directory
-        let cardsDir: URL = tempDir.appendingPathComponent("cards")
-        try FileManager.default.createDirectory(at: cardsDir, withIntermediateDirectories: true)
+        // Create column subdirectory
+        let todoDir: URL = tempDir.appendingPathComponent("cards/todo")
+        try FileManager.default.createDirectory(at: todoDir, withIntermediateDirectories: true)
 
         // Create a valid card
         let validCard: String = """
@@ -143,11 +151,11 @@ struct BoardLoaderTests {
             position: n
             ---
             """
-        try validCard.write(to: cardsDir.appendingPathComponent("valid-card.md"), atomically: true, encoding: .utf8)
+        try validCard.write(to: todoDir.appendingPathComponent("valid-card.md"), atomically: true, encoding: .utf8)
 
         // Create a malformed card (no frontmatter)
         let malformedCard: String = "This is not a valid card file."
-        try malformedCard.write(to: cardsDir.appendingPathComponent("malformed.md"), atomically: true, encoding: .utf8)
+        try malformedCard.write(to: todoDir.appendingPathComponent("malformed.md"), atomically: true, encoding: .utf8)
 
         // Load should succeed, skipping the malformed card
         let loadedBoard: LoadedBoard = try BoardLoader.load(from: tempDir)
@@ -172,9 +180,9 @@ struct BoardLoaderTests {
             """
         try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
 
-        // Create cards directory
-        let cardsDir: URL = tempDir.appendingPathComponent("cards")
-        try FileManager.default.createDirectory(at: cardsDir, withIntermediateDirectories: true)
+        // Create column subdirectory
+        let todoDir: URL = tempDir.appendingPathComponent("cards/todo")
+        try FileManager.default.createDirectory(at: todoDir, withIntermediateDirectories: true)
 
         // Create cards with different positions (out of order)
         let card1: String = """
@@ -199,9 +207,9 @@ struct BoardLoaderTests {
             ---
             """
 
-        try card1.write(to: cardsDir.appendingPathComponent("third-card.md"), atomically: true, encoding: .utf8)
-        try card2.write(to: cardsDir.appendingPathComponent("first-card.md"), atomically: true, encoding: .utf8)
-        try card3.write(to: cardsDir.appendingPathComponent("second-card.md"), atomically: true, encoding: .utf8)
+        try card1.write(to: todoDir.appendingPathComponent("third-card.md"), atomically: true, encoding: .utf8)
+        try card2.write(to: todoDir.appendingPathComponent("first-card.md"), atomically: true, encoding: .utf8)
+        try card3.write(to: todoDir.appendingPathComponent("second-card.md"), atomically: true, encoding: .utf8)
 
         // Load and verify sort order
         let loadedBoard: LoadedBoard = try BoardLoader.load(from: tempDir)
@@ -222,7 +230,9 @@ struct CardWriterTests {
         let tempDir: URL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SimpleKanbanTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
-        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards"), withIntermediateDirectories: true)
+        // Create column subdirectories
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/todo"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/done"), withIntermediateDirectories: true)
         return tempDir
     }
 
@@ -230,7 +240,7 @@ struct CardWriterTests {
         try? FileManager.default.removeItem(at: url)
     }
 
-    @Test("Saves new card to file")
+    @Test("Saves new card to column subdirectory")
     func savesNewCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -245,8 +255,8 @@ struct CardWriterTests {
 
         try CardWriter.save(card, in: tempDir)
 
-        // Verify file exists
-        let cardPath: URL = tempDir.appendingPathComponent("cards/new-card.md")
+        // Verify file exists in column subdirectory
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-card.md")
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
 
         // Verify content
@@ -256,12 +266,12 @@ struct CardWriterTests {
         #expect(content.contains("Card description."))
     }
 
-    @Test("Updates existing card")
-    func updatesExistingCard() throws {
+    @Test("Moves file when column changes")
+    func movesFileOnColumnChange() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
 
-        // Create initial card
+        // Create initial card in todo
         var card: Card = Card(
             title: "My Card",
             column: "todo",
@@ -269,14 +279,21 @@ struct CardWriterTests {
         )
         try CardWriter.save(card, in: tempDir)
 
-        // Update the card
+        // Verify in todo directory
+        let todoPath: URL = tempDir.appendingPathComponent("cards/todo/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: todoPath.path))
+
+        // Move to done column
         card.column = "done"
         card.body = "Updated body"
-        try CardWriter.save(card, in: tempDir)
+        try CardWriter.save(card, in: tempDir, previousColumn: "todo")
 
-        // Verify updated content
-        let cardPath: URL = tempDir.appendingPathComponent("cards/my-card.md")
-        let content: String = try String(contentsOf: cardPath, encoding: .utf8)
+        // Verify moved to done directory
+        #expect(!FileManager.default.fileExists(atPath: todoPath.path))
+        let donePath: URL = tempDir.appendingPathComponent("cards/done/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: donePath.path))
+
+        let content: String = try String(contentsOf: donePath, encoding: .utf8)
         #expect(content.contains("column: done"))
         #expect(content.contains("Updated body"))
     }
@@ -295,7 +312,7 @@ struct CardWriterTests {
         try CardWriter.save(card, in: tempDir)
 
         // Verify old file exists
-        let oldPath: URL = tempDir.appendingPathComponent("cards/old-title.md")
+        let oldPath: URL = tempDir.appendingPathComponent("cards/todo/old-title.md")
         #expect(FileManager.default.fileExists(atPath: oldPath.path))
 
         // Update title and save
@@ -305,11 +322,11 @@ struct CardWriterTests {
 
         // Verify old file is gone, new file exists
         #expect(!FileManager.default.fileExists(atPath: oldPath.path))
-        let newPath: URL = tempDir.appendingPathComponent("cards/new-title.md")
+        let newPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
         #expect(FileManager.default.fileExists(atPath: newPath.path))
     }
 
-    @Test("Deletes card file")
+    @Test("Deletes card file from column subdirectory")
     func deletesCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -322,7 +339,7 @@ struct CardWriterTests {
         )
         try CardWriter.save(card, in: tempDir)
 
-        let cardPath: URL = tempDir.appendingPathComponent("cards/to-delete.md")
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/to-delete.md")
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
 
         // Delete card
@@ -331,7 +348,7 @@ struct CardWriterTests {
         #expect(!FileManager.default.fileExists(atPath: cardPath.path))
     }
 
-    @Test("Archives card with date prefix")
+    @Test("Archives card from column subdirectory")
     func archivesCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -347,8 +364,8 @@ struct CardWriterTests {
         // Archive card
         try CardWriter.archive(card, in: tempDir)
 
-        // Verify moved to archive with date prefix
-        let cardsPath: URL = tempDir.appendingPathComponent("cards/to-archive.md")
+        // Verify removed from column subdirectory
+        let cardsPath: URL = tempDir.appendingPathComponent("cards/done/to-archive.md")
         #expect(!FileManager.default.fileExists(atPath: cardsPath.path))
 
         let archiveDir: URL = tempDir.appendingPathComponent("archive")
@@ -364,7 +381,7 @@ struct CardWriterTests {
         #expect(filename.count > "to-archive.md".count) // Has date prefix
     }
 
-    @Test("Throws on duplicate title")
+    @Test("Throws on duplicate title in same column")
     func throwsOnDuplicateTitle() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -377,10 +394,10 @@ struct CardWriterTests {
         )
         try CardWriter.save(card1, in: tempDir)
 
-        // Try to create second card with same title
+        // Try to create second card with same title in same column
         let card2: Card = Card(
             title: "Same Title",
-            column: "done",
+            column: "todo",
             position: "t"
         )
 
@@ -433,7 +450,7 @@ struct BoardWriterTests {
         #expect(content.contains("id: bug"))
     }
 
-    @Test("Creates new board directory structure")
+    @Test("Creates new board with column subdirectories")
     func createsNewBoard() throws {
         let tempDir: URL = try createTempDirectory()
         let boardDir: URL = tempDir.appendingPathComponent("NewBoard")
@@ -443,14 +460,36 @@ struct BoardWriterTests {
 
         try BoardWriter.create(board, at: boardDir)
 
-        // Verify structure
+        // Verify board.md exists
         #expect(FileManager.default.fileExists(atPath: boardDir.appendingPathComponent("board.md").path))
 
+        // Verify column subdirectories were created
         var isDirectory: ObjCBool = false
-        let cardsExists: Bool = FileManager.default.fileExists(
-            atPath: boardDir.appendingPathComponent("cards").path,
+
+        // Default board has todo, in-progress, done columns
+        let todoExists: Bool = FileManager.default.fileExists(
+            atPath: boardDir.appendingPathComponent("cards/todo").path,
             isDirectory: &isDirectory
         )
-        #expect(cardsExists && isDirectory.boolValue)
+        #expect(todoExists && isDirectory.boolValue)
+
+        let inProgressExists: Bool = FileManager.default.fileExists(
+            atPath: boardDir.appendingPathComponent("cards/in-progress").path,
+            isDirectory: &isDirectory
+        )
+        #expect(inProgressExists && isDirectory.boolValue)
+
+        let doneExists: Bool = FileManager.default.fileExists(
+            atPath: boardDir.appendingPathComponent("cards/done").path,
+            isDirectory: &isDirectory
+        )
+        #expect(doneExists && isDirectory.boolValue)
+
+        // Verify archive directory was created
+        let archiveExists: Bool = FileManager.default.fileExists(
+            atPath: boardDir.appendingPathComponent("archive").path,
+            isDirectory: &isDirectory
+        )
+        #expect(archiveExists && isDirectory.boolValue)
     }
 }

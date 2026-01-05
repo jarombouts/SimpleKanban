@@ -1,9 +1,9 @@
 ---
 title: Run manual QA on user interface
-column: in-progress
+column: todo
 position: n
 created: 2026-01-05T10:00:44Z
-modified: 2026-01-05T13:59:36Z
+modified: 2026-01-05T14:01:49Z
 labels: []
 ---
 

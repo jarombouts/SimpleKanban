@@ -33,7 +33,11 @@ struct BoardStoreTests {
             ---
             """
         try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
-        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards"), withIntermediateDirectories: true)
+
+        // Create column subdirectories
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/todo"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/in-progress"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/done"), withIntermediateDirectories: true)
 
         return tempDir
     }
@@ -54,7 +58,7 @@ struct BoardStoreTests {
         #expect(store.cards.isEmpty)
     }
 
-    @Test("Adds new card")
+    @Test("Adds new card to column subdirectory")
     func addsCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -67,12 +71,12 @@ struct BoardStoreTests {
         #expect(store.cards[0].title == "New Card")
         #expect(store.cards[0].column == "todo")
 
-        // Verify file was created
-        let cardPath: URL = tempDir.appendingPathComponent("cards/new-card.md")
+        // Verify file was created in column subdirectory
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-card.md")
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
     }
 
-    @Test("Moves card to different column")
+    @Test("Moves card to different column and directory")
     func movesCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -82,13 +86,20 @@ struct BoardStoreTests {
 
         #expect(store.cards[0].column == "todo")
 
+        // Verify card starts in todo directory
+        let todoPath: URL = tempDir.appendingPathComponent("cards/todo/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: todoPath.path))
+
         try store.moveCard(store.cards[0], toColumn: "in-progress")
 
         #expect(store.cards[0].column == "in-progress")
 
-        // Verify file was updated
-        let cardPath: URL = tempDir.appendingPathComponent("cards/my-card.md")
-        let content: String = try String(contentsOf: cardPath, encoding: .utf8)
+        // Verify file moved to in-progress directory
+        #expect(!FileManager.default.fileExists(atPath: todoPath.path))
+        let inProgressPath: URL = tempDir.appendingPathComponent("cards/in-progress/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: inProgressPath.path))
+
+        let content: String = try String(contentsOf: inProgressPath, encoding: .utf8)
         #expect(content.contains("column: in-progress"))
     }
 
@@ -100,7 +111,7 @@ struct BoardStoreTests {
         let store: BoardStore = try BoardStore(url: tempDir)
         try store.addCard(title: "Old Title", toColumn: "todo")
 
-        let oldPath: URL = tempDir.appendingPathComponent("cards/old-title.md")
+        let oldPath: URL = tempDir.appendingPathComponent("cards/todo/old-title.md")
         #expect(FileManager.default.fileExists(atPath: oldPath.path))
 
         try store.updateCard(store.cards[0], title: "New Title")
@@ -108,11 +119,11 @@ struct BoardStoreTests {
         #expect(store.cards[0].title == "New Title")
         #expect(!FileManager.default.fileExists(atPath: oldPath.path))
 
-        let newPath: URL = tempDir.appendingPathComponent("cards/new-title.md")
+        let newPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
         #expect(FileManager.default.fileExists(atPath: newPath.path))
     }
 
-    @Test("Deletes card")
+    @Test("Deletes card from column subdirectory")
     func deletesCard() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -127,7 +138,7 @@ struct BoardStoreTests {
 
         #expect(store.cards.isEmpty)
 
-        let cardPath: URL = tempDir.appendingPathComponent("cards/to-delete.md")
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/to-delete.md")
         #expect(!FileManager.default.fileExists(atPath: cardPath.path))
     }
 
@@ -213,8 +224,8 @@ struct BoardStoreTests {
         let store: BoardStore = try BoardStore(url: tempDir)
         try store.addCard(title: "Test Card", toColumn: "in-progress")
 
-        // Read the file directly and verify column is written correctly
-        let cardPath: URL = tempDir.appendingPathComponent("cards/test-card.md")
+        // Read the file directly from column subdirectory
+        let cardPath: URL = tempDir.appendingPathComponent("cards/in-progress/test-card.md")
         let content: String = try String(contentsOf: cardPath, encoding: .utf8)
 
         #expect(content.contains("column: in-progress"))

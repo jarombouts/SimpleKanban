@@ -150,25 +150,31 @@ public final class FileWatcher: @unchecked Sendable {
     // MARK: - Private Methods
 
     /// Handles changes to the cards directory.
+    ///
+    /// Uses recursive enumeration to find all .md files under cards/,
+    /// since cards are now stored in column subdirectories (cards/{column}/).
     private func handleCardsDirectoryChange() {
-        // Get list of current card files
         let cardsURL: URL = url.appendingPathComponent("cards")
 
-        do {
-            let files: [URL] = try FileManager.default.contentsOfDirectory(
-                at: cardsURL,
-                includingPropertiesForKeys: [.contentModificationDateKey]
-            ).filter { $0.pathExtension == "md" }
-
-            // Add to pending changes
-            pendingChangedFiles.formUnion(files)
-
-            // Debounce the notification
-            scheduleDebounce()
-        } catch {
-            // Directory might not exist or be accessible
-            print("FileWatcher: Error reading cards directory: \(error)")
+        // Recursively enumerate all .md files under cards/
+        var files: [URL] = []
+        if let enumerator = FileManager.default.enumerator(
+            at: cardsURL,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            for case let fileURL as URL in enumerator {
+                if fileURL.pathExtension == "md" {
+                    files.append(fileURL)
+                }
+            }
         }
+
+        // Add to pending changes
+        pendingChangedFiles.formUnion(files)
+
+        // Debounce the notification
+        scheduleDebounce()
     }
 
     /// Handles changes to board.md.
@@ -253,14 +259,20 @@ extension BoardStore {
                 }
             }
 
-            // Check for deleted cards
+            // Check for deleted cards - recursively enumerate column subdirs
             let cardsDir: URL = self.url.appendingPathComponent("cards")
-            let currentFiles: Set<String> = Set(
-                (try? FileManager.default.contentsOfDirectory(
-                    at: cardsDir,
-                    includingPropertiesForKeys: nil
-                ).map { $0.deletingPathExtension().lastPathComponent }) ?? []
-            )
+            var currentFiles: Set<String> = []
+            if let enumerator = FileManager.default.enumerator(
+                at: cardsDir,
+                includingPropertiesForKeys: nil,
+                options: [.skipsHiddenFiles]
+            ) {
+                for case let fileURL as URL in enumerator {
+                    if fileURL.pathExtension == "md" {
+                        currentFiles.insert(fileURL.deletingPathExtension().lastPathComponent)
+                    }
+                }
+            }
 
             self.removeCards(notIn: currentFiles)
         }

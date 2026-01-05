@@ -177,10 +177,16 @@ public final class BoardStore: @unchecked Sendable {
     ///   - card: The card to move
     ///   - columnID: The target column
     ///   - index: Optional index in the target column (appends to end if nil)
+    ///
+    /// When moving between columns, the card file physically moves from
+    /// cards/{oldColumn}/ to cards/{newColumn}/.
     public func moveCard(_ card: Card, toColumn columnID: String, atIndex index: Int? = nil) throws {
         guard let cardIndex = cards.firstIndex(where: { $0.title == card.title }) else {
             return
         }
+
+        // Track old column for file move
+        let oldColumn: String = cards[cardIndex].column
 
         // Calculate new position
         let targetColumnCards: [Card] = cards(forColumn: columnID)
@@ -222,7 +228,8 @@ public final class BoardStore: @unchecked Sendable {
         cards[cardIndex].position = newPosition
         cards[cardIndex].modified = Date()
 
-        try CardWriter.save(cards[cardIndex], in: url)
+        // Pass previousColumn so CardWriter knows to move the file
+        try CardWriter.save(cards[cardIndex], in: url, previousColumn: oldColumn)
         sortCards()
     }
 
