@@ -248,13 +248,13 @@ private func yamlEscape(_ value: String) -> String {
 public struct Board: Equatable, Sendable {
     public var title: String
     public var columns: [Column]
-    public var labels: [Label]
+    public var labels: [CardLabel]
     public var cardTemplate: String
 
     public init(
         title: String,
         columns: [Column],
-        labels: [Label] = [],
+        labels: [CardLabel] = [],
         cardTemplate: String = ""
     ) {
         self.title = title
@@ -290,7 +290,8 @@ public struct Column: Equatable, Sendable {
 }
 
 /// A label that can be applied to cards.
-public struct Label: Equatable, Sendable {
+/// Named CardLabel to avoid conflict with SwiftUI.Label.
+public struct CardLabel: Equatable, Sendable {
     public var id: String
     public var name: String
     public var color: String
@@ -376,9 +377,9 @@ extension Board {
 
         // Extract labels (optional)
         let labelsData: [[String: String]] = parsedYAML["labels"] as? [[String: String]] ?? []
-        let labels: [Label] = labelsData.compactMap { dict in
+        let labels: [CardLabel] = labelsData.compactMap { dict in
             guard let id = dict["id"], let name = dict["name"], let color = dict["color"] else { return nil }
-            return Label(id: id, name: name, color: color)
+            return CardLabel(id: id, name: name, color: color)
         }
 
         // Extract body (card template)

@@ -382,7 +382,7 @@ struct BoardParserTests {
                 Column(id: "done", name: "Done")
             ],
             labels: [
-                Label(id: "bug", name: "Bug", color: "#ff0000")
+                CardLabel(id: "bug", name: "Bug", color: "#ff0000")
             ],
             cardTemplate: "Template content"
         )
@@ -419,8 +419,8 @@ struct BoardParserTests {
                 Column(id: "done", name: "Done")
             ],
             labels: [
-                Label(id: "bug", name: "Bug", color: "#ff0000"),
-                Label(id: "feature", name: "Feature", color: "#00ff00")
+                CardLabel(id: "bug", name: "Bug", color: "#ff0000"),
+                CardLabel(id: "feature", name: "Feature", color: "#00ff00")
             ],
             cardTemplate: "## Description\n\nWhat needs to be done."
         )

@@ -418,7 +418,7 @@ struct BoardWriterTests {
                 Column(id: "done", name: "Done")
             ],
             labels: [
-                Label(id: "bug", name: "Bug", color: "#ff0000")
+                CardLabel(id: "bug", name: "Bug", color: "#ff0000")
             ]
         )
 

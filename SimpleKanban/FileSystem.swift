@@ -214,6 +214,58 @@ public enum CardWriter {
     }
 }
 
+// MARK: - BoardTitleReader
+
+/// Reads just the title from a board.md file without loading all cards.
+///
+/// This is used for displaying recent boards in the welcome screen.
+/// It's more efficient than loading the full board when we only need the title.
+public enum BoardTitleReader {
+
+    /// Reads the title from a board.md file.
+    ///
+    /// - Parameter url: The board directory URL (containing board.md)
+    /// - Returns: The board title, or nil if the file can't be read or has no title
+    ///
+    /// This is a lightweight read that only parses the frontmatter to extract
+    /// the title field. Falls back to nil if anything goes wrong, allowing
+    /// the caller to use a fallback (like the folder name).
+    public static func readTitle(from url: URL) -> String? {
+        let boardURL: URL = url.appendingPathComponent("board.md")
+
+        guard let content = try? String(contentsOf: boardURL, encoding: .utf8) else {
+            return nil
+        }
+
+        // Simple extraction of title from frontmatter
+        // Format: ---\ntitle: Board Name\n...\n---
+        let lines: [String] = content.components(separatedBy: "\n")
+
+        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---" else {
+            return nil
+        }
+
+        for line in lines.dropFirst() {
+            let trimmed: String = line.trimmingCharacters(in: .whitespaces)
+
+            // Stop at end of frontmatter
+            if trimmed == "---" {
+                break
+            }
+
+            // Look for title: value
+            if trimmed.lowercased().hasPrefix("title:") {
+                let value: String = String(trimmed.dropFirst(6)).trimmingCharacters(in: .whitespaces)
+                if !value.isEmpty {
+                    return value
+                }
+            }
+        }
+
+        return nil
+    }
+}
+
 // MARK: - BoardWriter
 
 /// Writes board configuration to disk.
