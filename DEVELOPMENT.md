@@ -18,21 +18,27 @@ SimpleKanban is a native macOS Kanban board application built with Swift/SwiftUI
 
 ```
 SimpleKanban/
-├── SimpleKanban/                # Main application source
+├── .github/
+│   └── workflows/
+│       └── test.yml            # GitHub Actions CI - runs tests on push/PR
+├── SimpleKanban/               # Main application source
 │   ├── SimpleKanbanApp.swift   # App entry point, window management, WelcomeView
 │   ├── BoardStore.swift        # In-memory state management, @Observable
 │   ├── Models.swift            # Data structures: Card, Board, Column, CardLabel
 │   ├── FileSystem.swift        # File I/O: BoardLoader, CardWriter, BoardWriter
 │   ├── FileWatcher.swift       # Monitors files for external changes
+│   ├── KeyboardNavigation.swift # Keyboard navigation controller (testable)
 │   └── Views.swift             # UI: BoardView, ColumnView, CardView, CardDetailView
 ├── SimpleKanbanTests/          # Test suite
 │   ├── ParserTests.swift       # Card and board parsing tests
 │   ├── FileSystemTests.swift   # File operations tests
-│   └── BoardStoreTests.swift   # State management tests
+│   ├── BoardStoreTests.swift   # State management tests
+│   └── KeyboardNavigationTests.swift  # Keyboard navigation tests (40+ cases)
 ├── SimpleKanban.xcodeproj/     # Xcode project
 ├── TestBoard/                  # Example board for development
+├── LICENSE                     # WTFPL license
 ├── CLAUDE.md                   # AI assistant guidelines
-├── roadmap.md                  # Original implementation plan
+├── roadmap.md                  # Implementation plan with progress
 └── DEVELOPMENT.md              # This file
 ```
 
@@ -244,10 +250,17 @@ Tests are in SimpleKanbanTests/ and can be run via:
 xcodebuild test -scheme SimpleKanban -destination 'platform=macOS'
 ```
 
+Tests also run automatically via GitHub Actions on every push to `main` and on pull requests.
+
 Test coverage:
 - `ParserTests.swift` - Card and Board parsing edge cases
 - `FileSystemTests.swift` - File I/O operations
 - `BoardStoreTests.swift` - State management logic
+- `KeyboardNavigationTests.swift` - Keyboard navigation logic (40+ test cases)
+  - Vertical/horizontal navigation
+  - Action keys (Enter, Delete, Escape)
+  - Cmd+Number column moves
+  - Edge cases and special characters
 
 ## Development Setup
 
