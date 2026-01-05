@@ -137,18 +137,56 @@ When in doubt, optimize for:
 
 ### File Format
 
-Cards are individual markdown files with YAML frontmatter:
+**board.md** - Board metadata:
 
 ```markdown
 ---
-id: 550e8400-e29b-41d4-a716-446655440000
+title: My Project Board
+columns:
+  - id: todo
+    name: To Do
+  - id: in-progress
+    name: In Progress
+  - id: done
+    name: Done
+labels:
+  - id: bug
+    name: Bug
+    color: "#e74c3c"
+  - id: feature
+    name: Feature
+    color: "#3498db"
+  - id: urgent
+    name: Urgent
+    color: "#e67e22"
+---
+
+## Card Template
+
+New cards start with this content (optional, free-form if omitted):
+
+## Description
+
+[What needs to be done]
+
+## Notes
+
+[Additional context]
+```
+
+**cards/{slug}.md** - Individual cards (filename = slugified title):
+
+```markdown
+---
 title: Implement drag and drop
 column: in-progress
-position: 0
+position: n
 created: 2024-01-05T10:00:00Z
 modified: 2024-01-05T14:30:00Z
-labels: [feature, ui]
+labels: [feature]
 ---
+
+## Description
 
 Add drag and drop support between columns.
 
@@ -158,16 +196,42 @@ Add drag and drop support between columns.
 - Consider keyboard alternative (Cmd+arrow)
 ```
 
+### Position System (Lexicographic)
+
+Positions use lexicographic strings for git-friendly merges:
+- First card: "n" (middle of alphabet)
+- Insert after "n": "t" (midpoint of n-z)
+- Insert between "n" and "t": "q" (midpoint)
+- Insert between "n" and "o": "nm" (extend with midpoint)
+
+This avoids renumbering existing cards when inserting, so only the new card creates a git diff.
+
+### Filename Rules
+
+- Filename = slugified title: "Implement Drag & Drop" → `implement-drag-and-drop.md`
+- Titles must be unique (enforced by app)
+- Renaming card title renames the file (git tracks as rename, preserves history)
+
+### Archive Format
+
+Archived cards move to `archive/` with date prefix:
+```
+archive/2024-01-05-implement-drag-and-drop.md
+```
+This sorts by completion date in filesystem listings.
+
 ### Directory Structure
 
 ```
 MyBoard/
-├── board.md          # Board metadata (title, column definitions)
+├── board.md          # Board metadata, columns, labels, card template
 ├── cards/
-│   ├── 550e8400-....md
-│   ├── 661f9511-....md
+│   ├── implement-drag-and-drop.md
+│   ├── fix-login-bug.md
 │   └── ...
-└── archive/          # Completed cards moved here (optional)
+└── archive/          # Archived cards with date prefix
+    ├── 2024-01-03-setup-ci-pipeline.md
+    └── 2024-01-05-write-readme.md
 ```
 
 ### Frameworks
@@ -179,4 +243,19 @@ MyBoard/
 
 ### File Watching
 
-Use `DispatchSource.makeFileSystemObjectSource` or `FSEvents` to detect external changes to card files. Reload affected cards when files change on disk.
+Use `DispatchSource.makeFileSystemObjectSource` or `FSEvents` to detect external changes. When a file changes while user is editing that card, prompt: "File changed externally. Reload or keep your changes?"
+
+### Design Decisions Summary
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| Board location | User-specified folder | Essential for git workflow |
+| Default columns | Todo/In Progress/Done + customizable | Quick start, flexibility later |
+| Positioning | Lexicographic strings | No renumbering = clean git diffs |
+| Labels | Defined in board.md | Consistent colors, typo prevention |
+| Archive | Move to archive/ with date prefix | Clean separation, chronological sorting |
+| External changes | Prompt user | Explicit conflict resolution |
+| Git features | None (v1) | Keep simple, use external tools |
+| Interaction | Keyboard + mouse | Power user friendly |
+| Windows | Single board per window | Simple for v1 |
+| Card template | Defined in board.md | Consistency, but not enforced |
