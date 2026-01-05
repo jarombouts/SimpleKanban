@@ -2,6 +2,9 @@
 # Runs tests automatically on every push to main branch and on pull requests.
 #
 # This ensures code quality by catching test failures before they're merged.
+#
+# Note: Uses macos-15 runner because project uses Xcode 16 project format
+# (objectVersion 77, PBXFileSystemSynchronizedRootGroup)
 
 name: Test
 
@@ -14,14 +17,11 @@ on:
 jobs:
   test:
     name: Run Tests
-    runs-on: macos-14
+    runs-on: macos-15
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Select Xcode version
-        run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
 
       - name: Show Xcode version
         run: xcodebuild -version
