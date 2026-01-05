@@ -11,8 +11,25 @@
 // - Watches the cards/ directory tree for card file changes
 // - Watches board.md for board config changes
 // - Does NOT watch archive/ (those files are write-only)
+// - Tracks event flags to distinguish creates/modifies/deletes
 
 import Foundation
+
+// MARK: - File Change Event
+
+/// Represents a file system change event with its type.
+struct FileChangeEvent: Hashable {
+    let url: URL
+    let isDeleted: Bool
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(url)
+    }
+
+    static func == (lhs: FileChangeEvent, rhs: FileChangeEvent) -> Bool {
+        return lhs.url == rhs.url
+    }
+}
 
 // MARK: - FileWatcher
 
@@ -21,8 +38,8 @@ import Foundation
 /// Usage:
 /// ```swift
 /// let watcher = FileWatcher(url: boardDirectory)
-/// watcher.onCardsChanged = { changedFiles in
-///     // Handle changed card files
+/// watcher.onCardsChanged = { changedFiles, deletedSlugs in
+///     // Handle changed/new card files and deleted slugs
 /// }
 /// watcher.start()
 /// // ... later
@@ -38,9 +55,11 @@ public final class FileWatcher: @unchecked Sendable {
     /// The board directory being watched.
     public let url: URL
 
-    /// Called when card files change. Parameter is list of changed file URLs.
+    /// Called when card files change.
+    /// First parameter is list of changed/new file URLs.
+    /// Second parameter is set of deleted file slugs (filename without extension).
     /// Called on the main thread.
-    public var onCardsChanged: (@MainActor ([URL]) -> Void)?
+    public var onCardsChanged: (@MainActor ([URL], Set<String>) -> Void)?
 
     /// Called when board.md changes.
     /// Called on the main thread.
@@ -58,8 +77,11 @@ public final class FileWatcher: @unchecked Sendable {
     /// Pending debounce work item.
     private var debounceWorkItem: DispatchWorkItem?
 
-    /// Set of changed files accumulated during debounce window.
+    /// Set of changed/new files accumulated during debounce window.
     private var pendingChangedFiles: Set<URL> = []
+
+    /// Set of deleted file slugs accumulated during debounce window.
+    private var pendingDeletedSlugs: Set<String> = []
 
     /// Whether board.md changed during debounce window.
     private var pendingBoardChange: Bool = false
@@ -112,8 +134,10 @@ public final class FileWatcher: @unchecked Sendable {
             // Convert paths to URLs
             let paths: [String] = Unmanaged<CFArray>.fromOpaque(eventPaths).takeUnretainedValue() as! [String]
 
-            for path in paths {
-                watcher.handlePathChange(path)
+            for i in 0..<numEvents {
+                let path: String = paths[i]
+                let flags: FSEventStreamEventFlags = eventFlags[i]
+                watcher.handlePathChange(path, flags: flags)
             }
         }
 
@@ -155,20 +179,32 @@ public final class FileWatcher: @unchecked Sendable {
 
     /// Handles a path change from FSEvents.
     ///
-    /// - Parameter path: The changed file/directory path
-    private func handlePathChange(_ path: String) {
+    /// - Parameters:
+    ///   - path: The changed file/directory path
+    ///   - flags: FSEvents flags indicating what type of change occurred
+    private func handlePathChange(_ path: String, flags: FSEventStreamEventFlags) {
         let changedURL: URL = URL(fileURLWithPath: path)
 
         // Check if this is a card file (in cards/{column}/*.md)
         let relativePath: String = changedURL.path.replacingOccurrences(of: url.path + "/", with: "")
+
+        // Check if file was removed
+        let isRemoved: Bool = (flags & UInt32(kFSEventStreamEventFlagItemRemoved)) != 0
 
         if relativePath == "board.md" {
             // Board config changed
             pendingBoardChange = true
             scheduleDebounce()
         } else if relativePath.hasPrefix("cards/") && changedURL.pathExtension == "md" {
-            // Card file changed - add to pending
-            pendingChangedFiles.insert(changedURL)
+            // Card file changed
+            if isRemoved {
+                // File was deleted - track the slug for removal
+                let slug: String = changedURL.deletingPathExtension().lastPathComponent
+                pendingDeletedSlugs.insert(slug)
+            } else {
+                // File was created or modified - track for reload
+                pendingChangedFiles.insert(changedURL)
+            }
             scheduleDebounce()
         }
         // Ignore archive/ and other files
@@ -182,15 +218,17 @@ public final class FileWatcher: @unchecked Sendable {
             guard let self = self else { return }
 
             let changedFiles: [URL] = Array(self.pendingChangedFiles)
+            let deletedSlugs: Set<String> = self.pendingDeletedSlugs
             let boardChanged: Bool = self.pendingBoardChange
 
             self.pendingChangedFiles.removeAll()
+            self.pendingDeletedSlugs.removeAll()
             self.pendingBoardChange = false
 
             // Notify on main thread
-            if !changedFiles.isEmpty {
+            if !changedFiles.isEmpty || !deletedSlugs.isEmpty {
                 Task { @MainActor in
-                    self.onCardsChanged?(changedFiles)
+                    self.onCardsChanged?(changedFiles, deletedSlugs)
                 }
             }
 
@@ -222,58 +260,56 @@ extension BoardStore {
     public func startWatching(onConflict: @escaping (Card) -> Bool = { _ in true }) -> FileWatcher {
         let watcher: FileWatcher = FileWatcher(url: url)
 
-        watcher.onCardsChanged = { [weak self] changedURLs in
+        watcher.onCardsChanged = { [weak self] changedURLs, deletedSlugs in
             guard let self = self else { return }
 
-            // For each changed file, reload and update state
+            // Handle deletions first - only remove cards whose files were explicitly deleted
+            for slug in deletedSlugs {
+                // Verify the file is actually gone before removing
+                // (FSEvents can sometimes report phantom deletes)
+                let possiblePaths: [URL] = self.board.columns.map { column in
+                    self.url.appendingPathComponent("cards/\(column.id)/\(slug).md")
+                }
+                let stillExists: Bool = possiblePaths.contains { FileManager.default.fileExists(atPath: $0.path) }
+
+                if !stillExists {
+                    self.removeCard(bySlug: slug)
+                }
+            }
+
+            // Handle creates and modifications
             for changedURL in changedURLs {
                 let filename: String = changedURL.deletingPathExtension().lastPathComponent
 
-                // Check if file still exists (might be a delete event)
-                let fileExists: Bool = FileManager.default.fileExists(atPath: changedURL.path)
+                // Skip if file doesn't exist (might be a stale event)
+                guard FileManager.default.fileExists(atPath: changedURL.path) else {
+                    continue
+                }
 
                 // Find existing card with this slug
                 if let existingIndex = self.cards.firstIndex(where: { slugify($0.title) == filename }) {
-                    if fileExists {
-                        // Card was modified - check for conflict
-                        if onConflict(self.cards[existingIndex]) {
-                            // Reload from disk
-                            do {
-                                try self.reloadCard(at: existingIndex, from: changedURL)
-                            } catch {
-                                print("FileWatcher: Error reloading card: \(error)")
-                            }
+                    // Card was modified - check for conflict
+                    if onConflict(self.cards[existingIndex]) {
+                        // Reload from disk
+                        do {
+                            try self.reloadCard(at: existingIndex, from: changedURL)
+                        } catch {
+                            // File might be temporarily invalid (mid-write), just log and skip
+                            print("FileWatcher: Error reloading card \(filename): \(error)")
                         }
                     }
-                    // Note: Deletions are handled by removeCards(notIn:) below
-                } else if fileExists {
+                } else {
                     // New card file - load it
                     do {
                         let content: String = try String(contentsOf: changedURL, encoding: .utf8)
                         let newCard: Card = try Card.parse(from: content)
                         self.addLoadedCard(newCard)
                     } catch {
-                        print("FileWatcher: Error loading new card: \(error)")
+                        // File might be invalid or still being written, just log and skip
+                        print("FileWatcher: Error loading new card \(filename): \(error)")
                     }
                 }
             }
-
-            // Check for deleted cards - recursively enumerate column subdirs
-            let cardsDir: URL = self.url.appendingPathComponent("cards")
-            var currentFiles: Set<String> = []
-            if let enumerator = FileManager.default.enumerator(
-                at: cardsDir,
-                includingPropertiesForKeys: nil,
-                options: [.skipsHiddenFiles]
-            ) {
-                for case let fileURL as URL in enumerator {
-                    if fileURL.pathExtension == "md" {
-                        currentFiles.insert(fileURL.deletingPathExtension().lastPathComponent)
-                    }
-                }
-            }
-
-            self.removeCards(notIn: currentFiles)
         }
 
         watcher.onBoardChanged = { [weak self] in
