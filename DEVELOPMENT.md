@@ -245,6 +245,12 @@ archive/2024-01-05-fix-login-bug.md
   - Shift+click to select range within same column
   - Toolbar buttons for bulk archive/delete (also accept drag-and-drop)
   - Bulk operations work with keyboard shortcuts too
+- Git sync:
+  - Auto-detects if board is in a git repository
+  - Status indicator in toolbar (synced/behind/ahead/uncommitted/conflict)
+  - Auto-sync every 60 seconds (fetch + pull when working tree is clean)
+  - Push button with confirmation dialog
+  - Conflicts shown as error — resolve in terminal
 
 ### Not Yet Implemented
 - Search/filter

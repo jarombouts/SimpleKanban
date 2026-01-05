@@ -201,6 +201,14 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [x] Bulk delete with Delete key (with confirmation)
 - [x] Bulk move with Cmd+1/2/3
 
+### 5.6 Git Sync
+- [x] Detect if board is in a git repository
+- [x] Status indicator in toolbar (synced/behind/ahead/uncommitted/conflict)
+- [x] Auto-sync every 60 seconds (fetch + pull when clean)
+- [x] Push button with confirmation dialog
+- [x] Only auto-pull when working tree is clean (safe)
+- [x] Conflict detection (user resolves in terminal)
+
 **Deliverable:** A tool you actually want to use every day.
 
 ## Future Ideas (Not in Scope)

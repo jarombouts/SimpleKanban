@@ -84,6 +84,15 @@ Select multiple cards to move, archive, or delete them together:
 
 You can also drag cards onto the Archive or Delete buttons in the toolbar.
 
+### Git Sync
+
+If your board folder is a git repository with a remote, SimpleKanban will automatically:
+- Show sync status in the toolbar (synced, behind, ahead, uncommitted)
+- Fetch and pull every 60 seconds when your working tree is clean
+- Display a **Push** button when you have local commits
+
+The one-file-per-card design means merge conflicts are rare. When they occur, resolve them in the terminal.
+
 ### Card Format
 
 Cards are markdown files with YAML frontmatter:
