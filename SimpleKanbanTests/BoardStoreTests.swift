@@ -234,4 +234,132 @@ struct BoardStoreTests {
         let card: Card = try Card.parse(from: content)
         #expect(card.column == "in-progress")
     }
+
+    // MARK: - Multi-Select / Bulk Operations
+
+    @Test("Gets multiple cards by titles")
+    func getsCardsByTitles() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "todo")
+        try store.addCard(title: "Card C", toColumn: "in-progress")
+
+        let titles: Set<String> = ["Card A", "Card C"]
+        let cards: [Card] = store.cards(withTitles: titles)
+
+        #expect(cards.count == 2)
+        let foundTitles: Set<String> = Set(cards.map { $0.title })
+        #expect(foundTitles == titles)
+    }
+
+    @Test("Archives multiple cards")
+    func archivesMultipleCards() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Archive Me 1", toColumn: "done")
+        try store.addCard(title: "Archive Me 2", toColumn: "done")
+        try store.addCard(title: "Keep Me", toColumn: "todo")
+
+        let cardsToArchive: [Card] = store.cards(withTitles: ["Archive Me 1", "Archive Me 2"])
+        let archived: Int = try store.archiveCards(cardsToArchive)
+
+        #expect(archived == 2)
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "Keep Me")
+
+        // Verify archive directory has 2 files
+        let archiveDir: URL = tempDir.appendingPathComponent("archive")
+        let files: [URL] = try FileManager.default.contentsOfDirectory(at: archiveDir, includingPropertiesForKeys: nil)
+        #expect(files.count == 2)
+    }
+
+    @Test("Deletes multiple cards")
+    func deletesMultipleCards() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Delete Me 1", toColumn: "todo")
+        try store.addCard(title: "Delete Me 2", toColumn: "in-progress")
+        try store.addCard(title: "Keep Me", toColumn: "done")
+
+        let cardsToDelete: [Card] = store.cards(withTitles: ["Delete Me 1", "Delete Me 2"])
+        let deleted: Int = try store.deleteCards(cardsToDelete)
+
+        #expect(deleted == 2)
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "Keep Me")
+
+        // Verify files are gone
+        let todoPath: URL = tempDir.appendingPathComponent("cards/todo/delete-me-1.md")
+        let inProgressPath: URL = tempDir.appendingPathComponent("cards/in-progress/delete-me-2.md")
+        #expect(!FileManager.default.fileExists(atPath: todoPath.path))
+        #expect(!FileManager.default.fileExists(atPath: inProgressPath.path))
+    }
+
+    @Test("Moves multiple cards to column")
+    func movesMultipleCards() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Move Me 1", toColumn: "todo")
+        try store.addCard(title: "Move Me 2", toColumn: "todo")
+        try store.addCard(title: "Stay Here", toColumn: "done")
+
+        let cardsToMove: [Card] = store.cards(withTitles: ["Move Me 1", "Move Me 2"])
+        let moved: Int = try store.moveCards(cardsToMove, toColumn: "in-progress")
+
+        #expect(moved == 2)
+
+        let inProgressCards: [Card] = store.cards(forColumn: "in-progress")
+        #expect(inProgressCards.count == 2)
+
+        let todoCards: [Card] = store.cards(forColumn: "todo")
+        #expect(todoCards.isEmpty)
+    }
+
+    @Test("Bulk move skips cards already in target column")
+    func bulkMoveSkipsCardsInTargetColumn() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "In Todo", toColumn: "todo")
+        try store.addCard(title: "Already Done", toColumn: "done")
+
+        let allCards: [Card] = store.cards(withTitles: ["In Todo", "Already Done"])
+        let moved: Int = try store.moveCards(allCards, toColumn: "done")
+
+        // Only 1 card should actually move (the one from todo)
+        #expect(moved == 1)
+
+        let doneCards: [Card] = store.cards(forColumn: "done")
+        #expect(doneCards.count == 2)
+    }
+
+    @Test("Bulk move preserves relative order")
+    func bulkMovePreservesOrder() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "First", toColumn: "todo")
+        try store.addCard(title: "Second", toColumn: "todo")
+        try store.addCard(title: "Third", toColumn: "todo")
+
+        let cardsToMove: [Card] = store.cards(withTitles: ["First", "Third"])
+        _ = try store.moveCards(cardsToMove, toColumn: "done")
+
+        let doneCards: [Card] = store.cards(forColumn: "done")
+        #expect(doneCards.count == 2)
+        // First had lower position than Third, so should still be first
+        #expect(doneCards[0].title == "First")
+        #expect(doneCards[1].title == "Third")
+    }
 }

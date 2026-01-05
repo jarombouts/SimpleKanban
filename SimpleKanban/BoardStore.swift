@@ -81,6 +81,14 @@ public final class BoardStore: @unchecked Sendable {
         return cards.first { $0.title == title }
     }
 
+    /// Gets multiple cards by their titles.
+    ///
+    /// - Parameter titles: Set of card titles to look up
+    /// - Returns: Array of found cards (order not guaranteed)
+    public func cards(withTitles titles: Set<String>) -> [Card] {
+        return cards.filter { titles.contains($0.title) }
+    }
+
     // MARK: - Card Mutations
 
     /// Adds a new card to the board.
@@ -247,6 +255,61 @@ public final class BoardStore: @unchecked Sendable {
     public func archiveCard(_ card: Card) throws {
         try CardWriter.archive(card, in: url)
         cards.removeAll { $0.title == card.title }
+    }
+
+    // MARK: - Bulk Card Mutations
+
+    /// Archives multiple cards.
+    /// Cards are archived in order to maintain consistent filesystem state.
+    ///
+    /// - Parameter cards: The cards to archive
+    /// - Returns: Number of cards successfully archived
+    @discardableResult
+    public func archiveCards(_ cardsToArchive: [Card]) throws -> Int {
+        var archived: Int = 0
+        for card in cardsToArchive {
+            try CardWriter.archive(card, in: url)
+            cards.removeAll { $0.title == card.title }
+            archived += 1
+        }
+        return archived
+    }
+
+    /// Deletes multiple cards permanently.
+    ///
+    /// - Parameter cards: The cards to delete
+    /// - Returns: Number of cards successfully deleted
+    @discardableResult
+    public func deleteCards(_ cardsToDelete: [Card]) throws -> Int {
+        var deleted: Int = 0
+        for card in cardsToDelete {
+            try CardWriter.delete(card, in: url)
+            cards.removeAll { $0.title == card.title }
+            deleted += 1
+        }
+        return deleted
+    }
+
+    /// Moves multiple cards to a different column.
+    /// Cards are appended to the end of the target column in their current order.
+    ///
+    /// - Parameters:
+    ///   - cards: The cards to move
+    ///   - columnID: The target column
+    /// - Returns: Number of cards successfully moved
+    @discardableResult
+    public func moveCards(_ cardsToMove: [Card], toColumn columnID: String) throws -> Int {
+        var moved: Int = 0
+        // Sort cards by current position to maintain relative order
+        let sortedCards: [Card] = cardsToMove.sorted { $0.position < $1.position }
+
+        for card in sortedCards {
+            // Skip if already in target column
+            guard card.column != columnID else { continue }
+            try moveCard(card, toColumn: columnID, atIndex: nil)
+            moved += 1
+        }
+        return moved
     }
 
     // MARK: - Board Mutations

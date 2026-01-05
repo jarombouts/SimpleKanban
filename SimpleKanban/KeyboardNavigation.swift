@@ -30,6 +30,17 @@ enum NavigationResult: Equatable {
     /// Card should be moved to a different column
     case moveCard(cardTitle: String, toColumnIndex: Int)
 
+    // MARK: - Bulk Operations (Multi-Select)
+
+    /// Multiple cards should be deleted (with confirmation)
+    case bulkDelete(cardTitles: Set<String>)
+
+    /// Multiple cards should be archived
+    case bulkArchive(cardTitles: Set<String>)
+
+    /// Multiple cards should be moved to a different column
+    case bulkMove(cardTitles: Set<String>, toColumnIndex: Int)
+
     /// No action taken (key not handled or no valid action)
     case none
 }

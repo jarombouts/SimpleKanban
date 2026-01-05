@@ -7,6 +7,7 @@
 //     - CardView: Individual card preview (title, labels, body snippet)
 // - CardDetailView: Full card editor (modal/sheet)
 
+import AppKit
 import SwiftUI
 
 // MARK: - BoardView
@@ -29,8 +30,14 @@ struct BoardView: View {
     /// Card currently open in the detail editor sheet
     @State private var editingCard: Card? = nil
 
-    /// Card currently selected via keyboard navigation (highlighted but not editing)
-    @State private var selectedCardTitle: String? = nil
+    /// Cards currently selected (for multi-select support)
+    /// Using Set<String> of card titles since titles are guaranteed unique
+    @State private var selectedCardTitles: Set<String> = []
+
+    /// The "anchor" card for Shift+click range selection.
+    /// This is the last card that was single-clicked (not Cmd+clicked).
+    /// Shift+click selects all cards from anchor to clicked card within same column.
+    @State private var selectionAnchor: String? = nil
 
     @State private var isAddingCard: Bool = false
     @State private var newCardColumnID: String = ""
@@ -38,8 +45,68 @@ struct BoardView: View {
     /// Whether to show delete confirmation alert
     @State private var showDeleteConfirmation: Bool = false
 
+    /// Cards pending deletion (for confirmation dialog)
+    @State private var cardsToDelete: Set<String> = []
+
     /// Tracks if the board view has keyboard focus
     @FocusState private var isBoardFocused: Bool
+
+    // MARK: - Selection Helpers
+
+    /// Returns the single selected card title, or nil if zero or multiple selected
+    private var singleSelectedTitle: String? {
+        selectedCardTitles.count == 1 ? selectedCardTitles.first : nil
+    }
+
+    /// Selects a single card, clearing all other selections and setting anchor.
+    /// Used for regular (unmodified) clicks.
+    private func selectSingle(_ cardTitle: String) {
+        selectedCardTitles = [cardTitle]
+        selectionAnchor = cardTitle
+    }
+
+    /// Toggles a card in/out of selection without affecting other selections.
+    /// Used for Cmd+click.
+    private func toggleSelection(_ cardTitle: String) {
+        if selectedCardTitles.contains(cardTitle) {
+            selectedCardTitles.remove(cardTitle)
+        } else {
+            selectedCardTitles.insert(cardTitle)
+        }
+        // Don't update anchor on Cmd+click - anchor stays at last single-clicked card
+    }
+
+    /// Selects a range of cards from anchor to target within the same column.
+    /// Used for Shift+click. If no anchor or different columns, treats as single select.
+    private func selectRange(to targetTitle: String) {
+        // Need anchor and both cards must be in the same column
+        guard let anchor = selectionAnchor,
+              let anchorCard = store.card(withTitle: anchor),
+              let targetCard = store.card(withTitle: targetTitle),
+              anchorCard.column == targetCard.column else {
+            // Different columns or no anchor - treat as single select
+            selectSingle(targetTitle)
+            return
+        }
+
+        let columnCards: [Card] = store.cards(forColumn: anchorCard.column)
+        guard let anchorIndex = columnCards.firstIndex(where: { $0.title == anchor }),
+              let targetIndex = columnCards.firstIndex(where: { $0.title == targetTitle }) else {
+            selectSingle(targetTitle)
+            return
+        }
+
+        // Select all cards in the range (inclusive)
+        let range: ClosedRange<Int> = min(anchorIndex, targetIndex)...max(anchorIndex, targetIndex)
+        selectedCardTitles = Set(columnCards[range].map { $0.title })
+        // Keep the same anchor for chained shift-clicks
+    }
+
+    /// Clears all selections and the anchor.
+    private func clearSelection() {
+        selectedCardTitles.removeAll()
+        selectionAnchor = nil
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -57,9 +124,16 @@ struct BoardView: View {
                             cards: store.cards(forColumn: column.id),
                             labels: store.board.labels,
                             columnWidth: columnWidth,
-                            selectedCardTitle: selectedCardTitle,
-                            onCardTap: { card in
-                                selectedCardTitle = card.title
+                            selectedCardTitles: selectedCardTitles,
+                            onCardTap: { card, isCommand, isShift in
+                                // Handle click with modifiers for multi-select
+                                if isShift {
+                                    selectRange(to: card.title)
+                                } else if isCommand {
+                                    toggleSelection(card.title)
+                                } else {
+                                    selectSingle(card.title)
+                                }
                             },
                             onCardDoubleTap: { card in
                                 editingCard = card
@@ -68,11 +142,21 @@ struct BoardView: View {
                                 newCardColumnID = column.id
                                 isAddingCard = true
                             },
-                            onMoveCard: { card, targetColumn, index in
-                                try? store.moveCard(card, toColumn: targetColumn, atIndex: index)
+                            onMoveCard: { cardTitle, targetColumn, index in
+                                // If the moved card is part of multi-selection, move all selected
+                                if selectedCardTitles.contains(cardTitle) && selectedCardTitles.count > 1 {
+                                    let cardsToMove: [Card] = store.cards(withTitles: selectedCardTitles)
+                                    try? store.moveCards(cardsToMove, toColumn: targetColumn)
+                                } else {
+                                    // Single card move
+                                    if let card = store.card(withTitle: cardTitle) {
+                                        try? store.moveCard(card, toColumn: targetColumn, atIndex: index)
+                                    }
+                                }
                             },
                             onArchiveCard: { card in
                                 try? store.archiveCard(card)
+                                selectedCardTitles.remove(card.title)
                             }
                         )
                     }
@@ -93,9 +177,44 @@ struct BoardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.board.title)
         .toolbar {
-            ToolbarItem(placement: .automatic) {
-                // Show selection hint when a card is selected
-                if let title = selectedCardTitle {
+            ToolbarItemGroup(placement: .automatic) {
+                // Archive button - enabled when cards selected, also accepts drag
+                ArchiveToolbarButton(
+                    isEnabled: !selectedCardTitles.isEmpty,
+                    onArchive: {
+                        let cards: [Card] = store.cards(withTitles: selectedCardTitles)
+                        try? store.archiveCards(cards)
+                        clearSelection()
+                    },
+                    onDrop: { titles in
+                        let cards: [Card] = store.cards(withTitles: titles)
+                        try? store.archiveCards(cards)
+                        // Remove dropped cards from selection
+                        selectedCardTitles.subtract(titles)
+                    }
+                )
+
+                // Delete button - enabled when cards selected, also accepts drag
+                DeleteToolbarButton(
+                    isEnabled: !selectedCardTitles.isEmpty,
+                    onDelete: {
+                        cardsToDelete = selectedCardTitles
+                        showDeleteConfirmation = true
+                    },
+                    onDrop: { titles in
+                        cardsToDelete = titles
+                        showDeleteConfirmation = true
+                    }
+                )
+
+                Divider()
+
+                // Selection status text
+                if selectedCardTitles.count > 1 {
+                    Text("\(selectedCardTitles.count) cards selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let title = singleSelectedTitle {
                     Text("Selected: \(title)")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -118,7 +237,7 @@ struct BoardView: View {
                 onDelete: {
                     try? store.deleteCard(card)
                     editingCard = nil
-                    selectedCardTitle = nil
+                    selectedCardTitles.remove(card.title)
                 },
                 onCancel: {
                     editingCard = nil
@@ -132,24 +251,29 @@ struct BoardView: View {
                     try? store.addCard(title: title, toColumn: column, body: body)
                     isAddingCard = false
                     // Select the newly created card
-                    selectedCardTitle = title
+                    selectSingle(title)
                 },
                 onCancel: {
                     isAddingCard = false
                 }
             )
         }
-        .alert("Delete Card", isPresented: $showDeleteConfirmation) {
-            Button("Cancel", role: .cancel) { }
-            Button("Delete", role: .destructive) {
-                if let title = selectedCardTitle,
-                   let card = store.card(withTitle: title) {
-                    try? store.deleteCard(card)
-                    selectedCardTitle = nil
-                }
+        .alert("Delete \(cardsToDelete.count == 1 ? "Card" : "Cards")", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) {
+                cardsToDelete.removeAll()
+            }
+            Button("Delete\(cardsToDelete.count > 1 ? " \(cardsToDelete.count) Cards" : "")", role: .destructive) {
+                let cards: [Card] = store.cards(withTitles: cardsToDelete)
+                try? store.deleteCards(cards)
+                selectedCardTitles.subtract(cardsToDelete)
+                cardsToDelete.removeAll()
             }
         } message: {
-            Text("Are you sure you want to delete this card? This cannot be undone.")
+            if cardsToDelete.count == 1 {
+                Text("Are you sure you want to delete this card? This cannot be undone.")
+            } else {
+                Text("Are you sure you want to delete \(cardsToDelete.count) cards? This cannot be undone.")
+            }
         }
     }
 
@@ -174,42 +298,57 @@ struct BoardView: View {
     }
 
     /// Translates a SwiftUI KeyPress into a NavigationResult using the controller.
+    /// For multi-select, uses the single selected title (or first if multiple).
     ///
     /// - Parameter keyPress: The key press event
     /// - Returns: The navigation result from the controller
     private func translateKeyPress(_ keyPress: KeyPress) -> NavigationResult {
+        // For navigation, use single selection. Multi-select actions handled separately.
+        let currentSelection: String? = singleSelectedTitle ?? selectedCardTitles.first
+
         // Check for Cmd+number to move to column
         if keyPress.modifiers.contains(.command) {
             let keyChar: Character = keyPress.key.character
             if let number = keyChar.wholeNumberValue {
-                return navigationController.handleCmdNumber(number, currentSelection: selectedCardTitle)
+                // Multi-select move: move all selected to column
+                if selectedCardTitles.count > 1 {
+                    return .bulkMove(cardTitles: selectedCardTitles, toColumnIndex: number - 1)
+                }
+                return navigationController.handleCmdNumber(number, currentSelection: currentSelection)
             }
 
-            // Cmd+Backspace archives the card
+            // Cmd+Backspace archives the card(s)
             if keyPress.key == .delete {
-                return navigationController.handleCmdDelete(currentSelection: selectedCardTitle)
+                if selectedCardTitles.count > 1 {
+                    return .bulkArchive(cardTitles: selectedCardTitles)
+                }
+                return navigationController.handleCmdDelete(currentSelection: currentSelection)
             }
         }
 
         // Regular keys
         switch keyPress.key {
         case .upArrow:
-            return navigationController.handleArrowUp(currentSelection: selectedCardTitle)
+            return navigationController.handleArrowUp(currentSelection: currentSelection)
         case .downArrow:
-            return navigationController.handleArrowDown(currentSelection: selectedCardTitle)
+            return navigationController.handleArrowDown(currentSelection: currentSelection)
         case .leftArrow:
-            return navigationController.handleArrowLeft(currentSelection: selectedCardTitle)
+            return navigationController.handleArrowLeft(currentSelection: currentSelection)
         case .rightArrow:
-            return navigationController.handleArrowRight(currentSelection: selectedCardTitle)
+            return navigationController.handleArrowRight(currentSelection: currentSelection)
         case .return:
-            return navigationController.handleEnter(currentSelection: selectedCardTitle)
+            return navigationController.handleEnter(currentSelection: currentSelection)
         case .delete:
-            return navigationController.handleDelete(currentSelection: selectedCardTitle)
+            // Multi-select delete: delete all selected
+            if selectedCardTitles.count > 1 {
+                return .bulkDelete(cardTitles: selectedCardTitles)
+            }
+            return navigationController.handleDelete(currentSelection: currentSelection)
         case .escape:
-            return navigationController.handleEscape(currentSelection: selectedCardTitle)
+            return navigationController.handleEscape(currentSelection: currentSelection)
         case .tab:
             let shiftPressed: Bool = keyPress.modifiers.contains(.shift)
-            return navigationController.handleTab(currentSelection: selectedCardTitle, shiftPressed: shiftPressed)
+            return navigationController.handleTab(currentSelection: currentSelection, shiftPressed: shiftPressed)
         default:
             return .none
         }
@@ -222,11 +361,11 @@ struct BoardView: View {
     private func applyNavigationResult(_ result: NavigationResult) -> Bool {
         switch result {
         case .selectionChanged(let cardTitle):
-            selectedCardTitle = cardTitle
+            selectSingle(cardTitle)
             return true
 
         case .selectionCleared:
-            selectedCardTitle = nil
+            clearSelection()
             return true
 
         case .openCard(let cardTitle):
@@ -236,13 +375,17 @@ struct BoardView: View {
             return true
 
         case .deleteCard:
-            showDeleteConfirmation = true
+            // Set up single card delete
+            if let title = singleSelectedTitle ?? selectedCardTitles.first {
+                cardsToDelete = [title]
+                showDeleteConfirmation = true
+            }
             return true
 
         case .archiveCard(let cardTitle):
             if let card = store.card(withTitle: cardTitle) {
                 try? store.archiveCard(card)
-                selectedCardTitle = nil
+                selectedCardTitles.remove(cardTitle)
             }
             return true
 
@@ -252,6 +395,26 @@ struct BoardView: View {
                 let targetColumn: Column = store.board.columns[columnIndex]
                 try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
             }
+            return true
+
+        case .bulkDelete(let cardTitles):
+            cardsToDelete = cardTitles
+            showDeleteConfirmation = true
+            return true
+
+        case .bulkArchive(let cardTitles):
+            let cards: [Card] = store.cards(withTitles: cardTitles)
+            try? store.archiveCards(cards)
+            clearSelection()
+            return true
+
+        case .bulkMove(let cardTitles, let columnIndex):
+            guard columnIndex >= 0 && columnIndex < store.board.columns.count else {
+                return false
+            }
+            let targetColumn: Column = store.board.columns[columnIndex]
+            let cards: [Card] = store.cards(withTitles: cardTitles)
+            try? store.moveCards(cards, toColumn: targetColumn.id)
             return true
 
         case .none:
@@ -294,20 +457,22 @@ struct BoardView: View {
 /// - Scrollable list of card previews
 /// - "Add card" button at bottom
 /// - Drop target for drag & drop
-/// - Selection highlight for keyboard navigation
+/// - Selection highlight for keyboard navigation (supports multi-select)
 struct ColumnView: View {
     let column: Column
     let cards: [Card]
     let labels: [CardLabel]
     let columnWidth: CGFloat
 
-    /// Title of the currently selected card (for keyboard navigation highlight)
-    let selectedCardTitle: String?
+    /// Titles of currently selected cards (for multi-select highlight)
+    let selectedCardTitles: Set<String>
 
-    let onCardTap: (Card) -> Void
+    /// Callback for card click with modifier state (card, isCommand, isShift)
+    let onCardTap: (Card, Bool, Bool) -> Void
     let onCardDoubleTap: (Card) -> Void
     let onAddCard: () -> Void
-    let onMoveCard: (Card, String, Int?) -> Void
+    /// Callback for move with card title (not full Card) since we only have title from drag
+    let onMoveCard: (String, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
 
     @State private var isTargeted: Bool = false
@@ -349,13 +514,17 @@ struct ColumnView: View {
                         CardView(
                             card: card,
                             labels: labels,
-                            isSelected: selectedCardTitle == card.title
+                            isSelected: selectedCardTitles.contains(card.title)
                         )
                         .onTapGesture(count: 2) {
                             onCardDoubleTap(card)
                         }
                         .onTapGesture(count: 1) {
-                            onCardTap(card)
+                            // Check modifier keys at tap time using NSEvent
+                            let modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
+                            let isCommand: Bool = modifiers.contains(.command)
+                            let isShift: Bool = modifiers.contains(.shift)
+                            onCardTap(card, isCommand, isShift)
                         }
                         .draggable(card.title)
                         .contextMenu {
@@ -373,7 +542,7 @@ struct ColumnView: View {
             }
             .dropDestination(for: String.self) { items, _ in
                 guard let cardTitle = items.first else { return false }
-                onMoveCard(Card(title: cardTitle, column: "", position: ""), column.id, nil)
+                onMoveCard(cardTitle, column.id, nil)
                 return true
             } isTargeted: { targeted in
                 isTargeted = targeted
@@ -746,4 +915,64 @@ extension Color {
 
 extension Card: Identifiable {
     public var id: String { title }
+}
+
+// MARK: - Toolbar Buttons
+
+/// Archive button that accepts both clicks and drag-drop.
+/// Shows in the toolbar, enabled when cards are selected.
+struct ArchiveToolbarButton: View {
+    let isEnabled: Bool
+    let onArchive: () -> Void
+    let onDrop: (Set<String>) -> Void
+
+    @State private var isTargeted: Bool = false
+
+    var body: some View {
+        Button(action: onArchive) {
+            Label("Archive", systemImage: "archivebox")
+        }
+        .disabled(!isEnabled && !isTargeted)
+        .help("Archive selected cards (Cmd+Backspace)")
+        .dropDestination(for: String.self) { items, _ in
+            let titles: Set<String> = Set(items)
+            onDrop(titles)
+            return true
+        } isTargeted: { targeted in
+            isTargeted = targeted
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+        )
+    }
+}
+
+/// Delete button that accepts both clicks and drag-drop.
+/// Shows in the toolbar, enabled when cards are selected.
+struct DeleteToolbarButton: View {
+    let isEnabled: Bool
+    let onDelete: () -> Void
+    let onDrop: (Set<String>) -> Void
+
+    @State private var isTargeted: Bool = false
+
+    var body: some View {
+        Button(role: .destructive, action: onDelete) {
+            Label("Delete", systemImage: "trash")
+        }
+        .disabled(!isEnabled && !isTargeted)
+        .help("Delete selected cards (Delete)")
+        .dropDestination(for: String.self) { items, _ in
+            let titles: Set<String> = Set(items)
+            onDrop(titles)
+            return true
+        } isTargeted: { targeted in
+            isTargeted = targeted
+        }
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(isTargeted ? Color.red : Color.clear, lineWidth: 2)
+        )
+    }
 }
