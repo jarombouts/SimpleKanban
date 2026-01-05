@@ -33,7 +33,8 @@ struct BoardView: View {
     @State private var selectedCardTitle: String? = nil
 
     @State private var isAddingCard: Bool = false
-    @State private var newCardColumn: String = ""
+    @State private var newCardColumnID: String = ""
+    @State private var newCardColumnName: String = ""
 
     /// Whether to show delete confirmation alert
     @State private var showDeleteConfirmation: Bool = false
@@ -65,7 +66,8 @@ struct BoardView: View {
                                 editingCard = card
                             },
                             onAddCard: {
-                                newCardColumn = column.id
+                                newCardColumnID = column.id
+                                newCardColumnName = column.name
                                 isAddingCard = true
                             },
                             onMoveCard: { card, targetColumn, index in
@@ -127,8 +129,8 @@ struct BoardView: View {
         }
         .sheet(isPresented: $isAddingCard) {
             NewCardView(
-                columnID: newCardColumn,
-                columns: store.board.columns,
+                columnID: newCardColumnID,
+                columnName: newCardColumnName,
                 onSave: { title, column, body in
                     try? store.addCard(title: title, toColumn: column, body: body)
                     isAddingCard = false
@@ -613,26 +615,18 @@ struct LabelToggle: View {
 // MARK: - NewCardView
 
 /// Sheet for creating a new card.
+///
+/// The column is determined by which "+" button was clicked, so we don't
+/// show a column picker - just display the target column name as info.
 struct NewCardView: View {
     let columnID: String
-    let columns: [Column]
+    let columnName: String
     let onSave: (String, String, String) -> Void
     let onCancel: () -> Void
 
     @State private var title: String = ""
-    @State private var selectedColumn: String
     @State private var cardBody: String = ""
     @FocusState private var isTitleFocused: Bool
-
-    init(columnID: String, columns: [Column],
-         onSave: @escaping (String, String, String) -> Void,
-         onCancel: @escaping () -> Void) {
-        self.columnID = columnID
-        self.columns = columns
-        self.onSave = onSave
-        self.onCancel = onCancel
-        self._selectedColumn = State(initialValue: columnID)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -648,7 +642,8 @@ struct NewCardView: View {
 
                 Spacer()
 
-                Button("Create") { onSave(title, selectedColumn, cardBody) }
+                // Use columnID directly - no state involved, no timing issues
+                Button("Create") { onSave(title, columnID, cardBody) }
                     .keyboardShortcut(.return)
                     .disabled(title.isEmpty)
             }
@@ -665,13 +660,10 @@ struct NewCardView: View {
                         .focused($isTitleFocused)
                 }
 
+                // Show the target column as read-only info (not a picker)
                 Section("Column") {
-                    Picker("Column", selection: $selectedColumn) {
-                        ForEach(columns, id: \.id) { column in
-                            Text(column.name).tag(column.id)
-                        }
-                    }
-                    .pickerStyle(.segmented)
+                    Text(columnName)
+                        .foregroundStyle(.secondary)
                 }
 
                 Section("Description (optional)") {
@@ -682,7 +674,7 @@ struct NewCardView: View {
             }
             .formStyle(.grouped)
         }
-        .frame(width: 400, height: 400)
+        .frame(width: 400, height: 350)
         .onAppear {
             isTitleFocused = true
         }

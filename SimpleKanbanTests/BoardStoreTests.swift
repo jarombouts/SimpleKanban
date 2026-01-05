@@ -204,4 +204,23 @@ struct BoardStoreTests {
             try store.addCard(title: "Unique Title", toColumn: "done")
         }
     }
+
+    @Test("Created card file contains correct column")
+    func createdCardFileContainsColumn() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Test Card", toColumn: "in-progress")
+
+        // Read the file directly and verify column is written correctly
+        let cardPath: URL = tempDir.appendingPathComponent("cards/test-card.md")
+        let content: String = try String(contentsOf: cardPath, encoding: .utf8)
+
+        #expect(content.contains("column: in-progress"))
+
+        // Also verify by re-parsing the file
+        let card: Card = try Card.parse(from: content)
+        #expect(card.column == "in-progress")
+    }
 }
