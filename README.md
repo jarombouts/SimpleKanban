@@ -1,0 +1,181 @@
+# SimpleKanban
+
+A native macOS Kanban board that stores everything as plain markdown files — perfect for git-based workflows.
+
+![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
+![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
+![License](https://img.shields.io/badge/license-WTFPL-green)
+
+## Why SimpleKanban?
+
+Most Kanban tools lock your data in proprietary formats or cloud services. SimpleKanban takes a different approach:
+
+- **Plain markdown files** — Your cards are just `.md` files you can read, edit, and grep from the terminal
+- **Git-friendly** — One file per card means minimal merge conflicts when collaborating
+- **No cloud required** — Everything lives in a folder you control
+- **No dependencies** — Pure Swift/SwiftUI, no external libraries
+
+## Installation
+
+Download the latest release from the [Releases page](https://github.com/jarombouts/SimpleKanban/releases), or build from source:
+
+```bash
+git clone https://github.com/jarombouts/SimpleKanban.git
+cd SimpleKanban
+open SimpleKanban.xcodeproj
+# Build and run with Cmd+R
+```
+
+Requires macOS 14.0+ and Xcode 16+.
+
+## Usage
+
+### Creating a Board
+
+1. Launch SimpleKanban
+2. Click **Create New Board**
+3. Choose a folder location (this becomes your board)
+4. Start adding cards!
+
+The folder structure looks like this:
+```
+MyProject/
+├── board.md              # Board settings, columns, labels
+├── cards/
+│   ├── fix-login-bug.md
+│   ├── add-dark-mode.md
+│   └── ...
+└── archive/              # Completed cards
+    └── 2026-01-05-setup-ci.md
+```
+
+### Keyboard Shortcuts
+
+SimpleKanban is built for keyboard-driven workflows:
+
+| Key | Action |
+|-----|--------|
+| `↑` `↓` | Navigate cards in column |
+| `←` `→` | Navigate between columns |
+| `Tab` | Next column |
+| `Enter` | Edit selected card |
+| `Delete` | Delete card (with confirmation) |
+| `Cmd+1/2/3` | Move card to column 1/2/3 |
+| `Cmd+Backspace` | Archive card |
+| `Escape` | Clear selection |
+| `Cmd+N` | New board |
+| `Cmd+O` | Open board |
+| `Cmd+W` | Close board |
+
+### Card Format
+
+Cards are markdown files with YAML frontmatter:
+
+```markdown
+---
+title: Fix login bug
+column: in-progress
+position: n
+created: 2026-01-05T10:00:00Z
+modified: 2026-01-05T14:30:00Z
+labels: [bug, urgent]
+---
+
+## Description
+
+Users can't log in when using special characters in passwords.
+
+## Notes
+
+- Check password encoding
+- Add test cases for special chars
+```
+
+### Columns and Labels
+
+Define columns and labels in `board.md`:
+
+```markdown
+---
+title: My Project
+columns:
+  - id: todo
+    name: To Do
+  - id: in-progress
+    name: In Progress
+  - id: done
+    name: Done
+labels:
+  - id: bug
+    name: Bug
+    color: "#e74c3c"
+  - id: feature
+    name: Feature
+    color: "#3498db"
+---
+```
+
+### Git Workflow
+
+Since everything is plain files, you can use your normal git workflow:
+
+```bash
+# See what changed
+git diff
+
+# Commit your board changes
+git add -A && git commit -m "Move login fix to done"
+
+# Collaborate with others
+git pull --rebase
+git push
+```
+
+The lexicographic position system (`position: n`, `position: q`, etc.) means inserting cards doesn't renumber existing ones — keeping your git diffs clean.
+
+## For Developers
+
+### Architecture
+
+```
+SimpleKanban/
+├── SimpleKanbanApp.swift     # App entry, window management
+├── BoardStore.swift          # @Observable state management
+├── Models.swift              # Card, Board, Column data structures
+├── FileSystem.swift          # File I/O operations
+├── FileWatcher.swift         # External change detection
+├── KeyboardNavigation.swift  # Testable navigation logic
+└── Views.swift               # SwiftUI views
+```
+
+### Running Tests
+
+```bash
+xcodebuild test -project SimpleKanban.xcodeproj -scheme SimpleKanban -destination 'platform=macOS'
+```
+
+Tests run automatically via GitHub Actions on every push.
+
+### Code Style
+
+- Explicit types always (`let count: Int = 5`)
+- Extensive comments explaining the "why"
+- Fail-fast with `guard` + `fatalError()` for impossible states
+- Prefer fewer, larger files with `// MARK:` sections
+
+See [CLAUDE.md](CLAUDE.md) for detailed guidelines.
+
+### Contributing
+
+1. Fork the repo
+2. Create a feature branch
+3. Make your changes (tests required for new features)
+4. Open a PR
+
+All contributions welcome!
+
+## License
+
+[WTFPL](LICENSE) — Do What The Fuck You Want To Public License.
+
+Made with caffeine in The Netherlands by [Strange Loop Software](https://github.com/jarombouts).
