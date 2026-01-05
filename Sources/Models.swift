@@ -106,7 +106,14 @@ extension Card {
             }
 
             let key: String = String(trimmed[..<colonIndex]).trimmingCharacters(in: .whitespaces)
-            let value: String = String(trimmed[trimmed.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+            var value: String = String(trimmed[trimmed.index(after: colonIndex)...]).trimmingCharacters(in: .whitespaces)
+
+            // Remove surrounding quotes if present (for values containing colons, etc.)
+            // Also unescape internal quotes (\" → ")
+            if value.hasPrefix("\"") && value.hasSuffix("\"") && value.count >= 2 {
+                value = String(value.dropFirst().dropLast())
+                value = value.replacingOccurrences(of: "\\\"", with: "\"")
+            }
 
             frontmatter[key] = value
         }
@@ -149,8 +156,8 @@ extension Card {
         var lines: [String] = []
 
         lines.append("---")
-        lines.append("title: \(title)")
-        lines.append("column: \(column)")
+        lines.append("title: \(yamlEscape(title))")
+        lines.append("column: \(yamlEscape(column))")
         lines.append("position: \(position)")
         lines.append("created: \(formatISO8601Date(created))")
         lines.append("modified: \(formatISO8601Date(modified))")
@@ -197,12 +204,14 @@ private func parseLabelsArray(_ value: String?) -> [String] {
 }
 
 /// Parses an ISO8601 date string like "2024-01-05T10:00:00Z".
+///
+/// Note: Creates a new formatter each call. ISO8601DateFormatter isn't Sendable,
+/// so we can't safely cache it as a global in Swift 6. The performance cost is
+/// acceptable for our use case (parsing happens infrequently).
 private func parseISO8601Date(_ value: String?) -> Date? {
     guard let value = value else { return nil }
-
     let formatter: ISO8601DateFormatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
-
     return formatter.date(from: value)
 }
 
@@ -211,6 +220,23 @@ private func formatISO8601Date(_ date: Date) -> String {
     let formatter: ISO8601DateFormatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime]
     return formatter.string(from: date)
+}
+
+/// Escapes a string for YAML if it contains special characters.
+/// Wraps in quotes if the value contains colons, quotes, or leading/trailing whitespace.
+private func yamlEscape(_ value: String) -> String {
+    let needsQuoting: Bool = value.contains(":") ||
+                             value.contains("\"") ||
+                             value.hasPrefix(" ") ||
+                             value.hasSuffix(" ") ||
+                             value.hasPrefix("#")
+
+    if needsQuoting {
+        // Escape internal quotes by doubling them
+        let escaped: String = value.replacingOccurrences(of: "\"", with: "\\\"")
+        return "\"\(escaped)\""
+    }
+    return value
 }
 
 // MARK: - Board Model

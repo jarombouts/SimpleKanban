@@ -66,10 +66,11 @@ public final class BoardStore: @unchecked Sendable {
     ///
     /// - Parameter columnID: The column ID to filter by
     /// - Returns: Cards in that column, sorted by position
+    ///
+    /// Note: The main `cards` array is already sorted by position globally,
+    /// so we only need to filter here. The relative order is preserved.
     public func cards(forColumn columnID: String) -> [Card] {
-        return cards
-            .filter { $0.column == columnID }
-            .sorted { $0.position < $1.position }
+        return cards.filter { $0.column == columnID }
     }
 
     /// Finds a card by its title.

@@ -200,7 +200,14 @@ public enum CardWriter {
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let datePrefix: String = dateFormatter.string(from: Date())
 
-        let archivePath: URL = archiveDir.appendingPathComponent("\(datePrefix)-\(slug).md")
+        var archivePath: URL = archiveDir.appendingPathComponent("\(datePrefix)-\(slug).md")
+
+        // Handle collision: if file exists, append a counter
+        var counter: Int = 2
+        while fileManager.fileExists(atPath: archivePath.path) {
+            archivePath = archiveDir.appendingPathComponent("\(datePrefix)-\(slug)-\(counter).md")
+            counter += 1
+        }
 
         // Move file to archive
         try fileManager.moveItem(at: sourcePath, to: archivePath)

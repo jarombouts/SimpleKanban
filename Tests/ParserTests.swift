@@ -158,6 +158,34 @@ struct FrontmatterParserTests {
         #expect(card.body.isEmpty)
     }
 
+    @Test("Parses title containing colon")
+    func titleWithColon() throws {
+        let markdown: String = """
+            ---
+            title: "Bug: Fix login issue"
+            column: todo
+            position: n
+            ---
+            """
+
+        let card: Card = try Card.parse(from: markdown)
+        #expect(card.title == "Bug: Fix login issue")
+    }
+
+    @Test("Parses title containing quotes")
+    func titleWithQuotes() throws {
+        let markdown: String = """
+            ---
+            title: "Say \\"Hello\\" to users"
+            column: todo
+            position: n
+            ---
+            """
+
+        let card: Card = try Card.parse(from: markdown)
+        #expect(card.title == "Say \"Hello\" to users")
+    }
+
     @Test("Throws on missing required field")
     func missingRequiredField() {
         let markdown: String = """
@@ -237,6 +265,20 @@ struct CardSerializationTests {
         #expect(reparsed.labels == card.labels)
         #expect(reparsed.body.trimmingCharacters(in: .whitespacesAndNewlines) ==
                 card.body.trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    @Test("Round-trip: title with special characters")
+    func roundTripSpecialChars() throws {
+        let card: Card = Card(
+            title: "Bug: Fix \"login\" issue",
+            column: "todo",
+            position: "n"
+        )
+
+        let serialized: String = card.toMarkdown()
+        let reparsed: Card = try Card.parse(from: serialized)
+
+        #expect(reparsed.title == card.title)
     }
 }
 
@@ -364,6 +406,35 @@ struct BoardParserTests {
         #expect(board.columns[0].id == "todo")
         #expect(board.columns[1].id == "in-progress")
         #expect(board.columns[2].id == "done")
+    }
+
+    @Test("Round-trip: board serialization preserves content")
+    func boardRoundTrip() throws {
+        let board: Board = Board(
+            title: "Test Board",
+            columns: [
+                Column(id: "backlog", name: "Backlog"),
+                Column(id: "doing", name: "Doing"),
+                Column(id: "review", name: "Review"),
+                Column(id: "done", name: "Done")
+            ],
+            labels: [
+                Label(id: "bug", name: "Bug", color: "#ff0000"),
+                Label(id: "feature", name: "Feature", color: "#00ff00")
+            ],
+            cardTemplate: "## Description\n\nWhat needs to be done."
+        )
+
+        let serialized: String = board.toMarkdown()
+        let reparsed: Board = try Board.parse(from: serialized)
+
+        #expect(reparsed.title == board.title)
+        #expect(reparsed.columns.count == board.columns.count)
+        #expect(reparsed.columns[0].id == "backlog")
+        #expect(reparsed.columns[3].name == "Done")
+        #expect(reparsed.labels.count == board.labels.count)
+        #expect(reparsed.labels[0].color == "#ff0000")
+        #expect(reparsed.cardTemplate.contains("What needs to be done."))
     }
 }
 
