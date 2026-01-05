@@ -155,176 +155,108 @@ struct BoardView: View {
 
     // MARK: - Keyboard Navigation
 
+    /// The navigation controller handles all keyboard navigation logic.
+    /// Extracted into a separate class for testability.
+    private var navigationController: KeyboardNavigationController {
+        KeyboardNavigationController(layoutProvider: store)
+    }
+
     /// Handles keyboard input for navigation and actions.
     ///
-    /// Returns .handled if the key was processed, .ignored otherwise.
+    /// Delegates to KeyboardNavigationController for navigation logic,
+    /// then applies the result to the view's state.
+    ///
+    /// - Parameter keyPress: The key press event to handle
+    /// - Returns: .handled if the key was processed, .ignored otherwise
     private func handleKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        let result: NavigationResult = translateKeyPress(keyPress)
+        return applyNavigationResult(result) ? .handled : .ignored
+    }
+
+    /// Translates a SwiftUI KeyPress into a NavigationResult using the controller.
+    ///
+    /// - Parameter keyPress: The key press event
+    /// - Returns: The navigation result from the controller
+    private func translateKeyPress(_ keyPress: KeyPress) -> NavigationResult {
         // Check for Cmd+number to move to column
         if keyPress.modifiers.contains(.command) {
-            // Cmd+1 through Cmd+9 move to columns
             let keyChar: Character = keyPress.key.character
-            if let number = keyChar.wholeNumberValue,
-               number >= 1 && number <= store.board.columns.count {
-                moveSelectedCardToColumn(index: number - 1)
-                return .handled
+            if let number = keyChar.wholeNumberValue {
+                return navigationController.handleCmdNumber(number, currentSelection: selectedCardTitle)
             }
 
             // Cmd+Backspace archives the card
             if keyPress.key == .delete {
-                archiveSelectedCard()
-                return .handled
+                return navigationController.handleCmdDelete(currentSelection: selectedCardTitle)
             }
         }
 
-        // Arrow keys for navigation
+        // Regular keys
         switch keyPress.key {
         case .upArrow:
-            navigateVertically(direction: -1)
-            return .handled
+            return navigationController.handleArrowUp(currentSelection: selectedCardTitle)
         case .downArrow:
-            navigateVertically(direction: 1)
-            return .handled
+            return navigationController.handleArrowDown(currentSelection: selectedCardTitle)
         case .leftArrow:
-            navigateHorizontally(direction: -1)
-            return .handled
+            return navigationController.handleArrowLeft(currentSelection: selectedCardTitle)
         case .rightArrow:
-            navigateHorizontally(direction: 1)
-            return .handled
+            return navigationController.handleArrowRight(currentSelection: selectedCardTitle)
         case .return:
-            openSelectedCard()
-            return .handled
+            return navigationController.handleEnter(currentSelection: selectedCardTitle)
         case .delete:
-            // Plain delete/backspace shows confirmation
-            if selectedCardTitle != nil {
-                showDeleteConfirmation = true
-            }
-            return .handled
+            return navigationController.handleDelete(currentSelection: selectedCardTitle)
         case .escape:
-            selectedCardTitle = nil
-            return .handled
+            return navigationController.handleEscape(currentSelection: selectedCardTitle)
         case .tab:
-            // Tab moves to next column, Shift+Tab to previous
-            if keyPress.modifiers.contains(.shift) {
-                navigateHorizontally(direction: -1)
-            } else {
-                navigateHorizontally(direction: 1)
-            }
-            return .handled
+            let shiftPressed: Bool = keyPress.modifiers.contains(.shift)
+            return navigationController.handleTab(currentSelection: selectedCardTitle, shiftPressed: shiftPressed)
         default:
-            return .ignored
+            return .none
         }
     }
 
-    /// Navigates up or down within the current column.
+    /// Applies a navigation result to the view's state.
     ///
-    /// - Parameter direction: -1 for up, 1 for down
-    private func navigateVertically(direction: Int) {
-        guard let currentTitle = selectedCardTitle,
-              let currentCard = store.card(withTitle: currentTitle) else {
-            // No selection - select first card in first column
-            selectFirstCard()
-            return
-        }
+    /// - Parameter result: The navigation result to apply
+    /// - Returns: True if the result was handled, false otherwise
+    private func applyNavigationResult(_ result: NavigationResult) -> Bool {
+        switch result {
+        case .selectionChanged(let cardTitle):
+            selectedCardTitle = cardTitle
+            return true
 
-        let columnCards: [Card] = store.cards(forColumn: currentCard.column)
-        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
-            return
-        }
+        case .selectionCleared:
+            selectedCardTitle = nil
+            return true
 
-        let newIndex: Int = currentIndex + direction
-        if newIndex >= 0 && newIndex < columnCards.count {
-            selectedCardTitle = columnCards[newIndex].title
-        }
-    }
-
-    /// Navigates left or right between columns.
-    ///
-    /// - Parameter direction: -1 for left, 1 for right
-    private func navigateHorizontally(direction: Int) {
-        guard let currentTitle = selectedCardTitle,
-              let currentCard = store.card(withTitle: currentTitle) else {
-            // No selection - select first card in first column
-            selectFirstCard()
-            return
-        }
-
-        // Find current column index
-        guard let currentColumnIndex = store.board.columns.firstIndex(where: { $0.id == currentCard.column }) else {
-            return
-        }
-
-        // Find the card's position in current column to try to maintain similar position
-        let currentColumnCards: [Card] = store.cards(forColumn: currentCard.column)
-        let currentCardIndex: Int = currentColumnCards.firstIndex(where: { $0.title == currentTitle }) ?? 0
-
-        // Calculate new column index
-        let newColumnIndex: Int = currentColumnIndex + direction
-        guard newColumnIndex >= 0 && newColumnIndex < store.board.columns.count else {
-            return
-        }
-
-        let newColumn: Column = store.board.columns[newColumnIndex]
-        let newColumnCards: [Card] = store.cards(forColumn: newColumn.id)
-
-        if newColumnCards.isEmpty {
-            // No cards in target column - keep current selection
-            return
-        }
-
-        // Try to maintain similar vertical position, or select last card if we're past the end
-        let targetIndex: Int = min(currentCardIndex, newColumnCards.count - 1)
-        selectedCardTitle = newColumnCards[targetIndex].title
-    }
-
-    /// Selects the first card in the first column that has cards.
-    private func selectFirstCard() {
-        for column in store.board.columns {
-            let cards: [Card] = store.cards(forColumn: column.id)
-            if let firstCard = cards.first {
-                selectedCardTitle = firstCard.title
-                return
+        case .openCard(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                editingCard = card
             }
+            return true
+
+        case .deleteCard:
+            showDeleteConfirmation = true
+            return true
+
+        case .archiveCard(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                try? store.archiveCard(card)
+                selectedCardTitle = nil
+            }
+            return true
+
+        case .moveCard(let cardTitle, let columnIndex):
+            if let card = store.card(withTitle: cardTitle),
+               columnIndex < store.board.columns.count {
+                let targetColumn: Column = store.board.columns[columnIndex]
+                try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
+            }
+            return true
+
+        case .none:
+            return false
         }
-    }
-
-    /// Opens the selected card for editing.
-    private func openSelectedCard() {
-        guard let title = selectedCardTitle,
-              let card = store.card(withTitle: title) else {
-            return
-        }
-        editingCard = card
-    }
-
-    /// Moves the selected card to a specific column by index.
-    ///
-    /// - Parameter index: 0-based column index
-    private func moveSelectedCardToColumn(index: Int) {
-        guard let title = selectedCardTitle,
-              let card = store.card(withTitle: title),
-              index < store.board.columns.count else {
-            return
-        }
-
-        let targetColumn: Column = store.board.columns[index]
-
-        // Don't move if already in target column
-        if card.column == targetColumn.id {
-            return
-        }
-
-        try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
-    }
-
-    /// Archives the selected card.
-    private func archiveSelectedCard() {
-        guard let title = selectedCardTitle,
-              let card = store.card(withTitle: title) else {
-            return
-        }
-
-        try? store.archiveCard(card)
-        selectedCardTitle = nil
     }
 
     /// Saves changes from the card detail view back to the store.

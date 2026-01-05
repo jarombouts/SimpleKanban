@@ -1,0 +1,52 @@
+# GitHub Actions workflow for SimpleKanban
+# Runs tests automatically on every push to main branch and on pull requests.
+#
+# This ensures code quality by catching test failures before they're merged.
+
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Select Xcode version
+        run: sudo xcode-select -s /Applications/Xcode_15.2.app/Contents/Developer
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project SimpleKanban.xcodeproj \
+            -scheme SimpleKanban \
+            -destination 'platform=macOS' \
+            -quiet
+
+      - name: Run Tests
+        run: |
+          xcodebuild test \
+            -project SimpleKanban.xcodeproj \
+            -scheme SimpleKanban \
+            -destination 'platform=macOS' \
+            -resultBundlePath TestResults.xcresult \
+            | xcpretty --color
+
+      - name: Upload Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: TestResults.xcresult
+          retention-days: 7

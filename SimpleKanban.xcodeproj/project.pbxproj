@@ -423,15 +423,6 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1B2C3D4000B000000000001 /* Build configuration list for PBXProject "SimpleKanban" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1B2C3D4000C000000000001 /* Debug */,
-				A1B2C3D4000C000000000002 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		A1B2C3D40007000000000001 /* Build configuration list for PBXNativeTarget "SimpleKanban" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -446,6 +437,15 @@
 			buildConfigurations = (
 				A1B2C3D4000E000000000001 /* Debug */,
 				A1B2C3D4000E000000000002 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		A1B2C3D4000B000000000001 /* Build configuration list for PBXProject "SimpleKanban" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1B2C3D4000C000000000001 /* Debug */,
+				A1B2C3D4000C000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
