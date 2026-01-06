@@ -674,4 +674,153 @@ struct BoardStoreTests {
         #expect(store2.board.columns[2].collapsed == true)
         #expect(store2.board.columns[0].collapsed == false)
     }
+
+    // MARK: - Card Duplication Tests
+
+    @Test("Duplicates card with (Copy) suffix")
+    func duplicatesCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Original Card", toColumn: "todo", body: "Card content", labels: ["bug"])
+
+        let original: Card = store.cards[0]
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "Original Card (Copy)")
+        #expect(duplicate.column == "todo")
+        #expect(duplicate.body == "Card content")
+        #expect(duplicate.labels == ["bug"])
+        #expect(store.cards.count == 2)
+
+        // Verify file was created
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/original-card-copy.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Duplicate increments copy number when (Copy) exists")
+    func duplicateIncrementsCopyNumber() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "My Card", toColumn: "todo")
+        try store.addCard(title: "My Card (Copy)", toColumn: "todo")
+
+        let original: Card = store.cards.first { $0.title == "My Card" }!
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "My Card (Copy 2)")
+    }
+
+    @Test("Duplicate continues incrementing copy numbers")
+    func duplicateContinuesIncrementing() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Task", toColumn: "todo")
+        try store.addCard(title: "Task (Copy)", toColumn: "todo")
+        try store.addCard(title: "Task (Copy 2)", toColumn: "todo")
+
+        let original: Card = store.cards.first { $0.title == "Task" }!
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "Task (Copy 3)")
+    }
+
+    @Test("Duplicating a copy uses base title")
+    func duplicatingCopyUsesBaseTitle() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Base Title", toColumn: "todo")
+        try store.addCard(title: "Base Title (Copy)", toColumn: "todo")
+
+        // Duplicate "Base Title (Copy)" - should become "Base Title (Copy 2)", not "Base Title (Copy) (Copy)"
+        let copyCard: Card = store.cards.first { $0.title == "Base Title (Copy)" }!
+        let duplicate: Card = try store.duplicateCard(copyCard)
+
+        #expect(duplicate.title == "Base Title (Copy 2)")
+    }
+
+    @Test("Duplicate is positioned after original")
+    func duplicatePositionedAfterOriginal() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "First", toColumn: "todo")
+        try store.addCard(title: "Second", toColumn: "todo")
+        try store.addCard(title: "Third", toColumn: "todo")
+
+        // Duplicate "Second" - should appear between Second and Third
+        let second: Card = store.cards.first { $0.title == "Second" }!
+        _ = try store.duplicateCard(second)
+
+        let todoCards: [Card] = store.cards(forColumn: "todo")
+        #expect(todoCards[0].title == "First")
+        #expect(todoCards[1].title == "Second")
+        #expect(todoCards[2].title == "Second (Copy)")
+        #expect(todoCards[3].title == "Third")
+    }
+
+    @Test("Duplicate of last card is positioned at end")
+    func duplicateLastCardAtEnd() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "First", toColumn: "todo")
+        try store.addCard(title: "Last", toColumn: "todo")
+
+        let last: Card = store.cards.first { $0.title == "Last" }!
+        _ = try store.duplicateCard(last)
+
+        let todoCards: [Card] = store.cards(forColumn: "todo")
+        #expect(todoCards[0].title == "First")
+        #expect(todoCards[1].title == "Last")
+        #expect(todoCards[2].title == "Last (Copy)")
+    }
+
+    @Test("Duplicates multiple cards")
+    func duplicatesMultipleCards() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "in-progress")
+
+        let cards: [Card] = store.cards
+        let duplicates: [Card] = try store.duplicateCards(cards)
+
+        #expect(duplicates.count == 2)
+        #expect(store.cards.count == 4)
+
+        let duplicateTitles: Set<String> = Set(duplicates.map { $0.title })
+        #expect(duplicateTitles.contains("Card A (Copy)"))
+        #expect(duplicateTitles.contains("Card B (Copy)"))
+    }
+
+    @Test("Duplicate has fresh timestamps")
+    func duplicateHasFreshTimestamps() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Old Card", toColumn: "todo")
+
+        // Wait a tiny bit to ensure timestamp difference
+        Thread.sleep(forTimeInterval: 0.01)
+
+        let original: Card = store.cards[0]
+        let duplicate: Card = try store.duplicateCard(original)
+
+        // Duplicate should have newer timestamps
+        #expect(duplicate.created > original.created)
+        #expect(duplicate.modified > original.modified)
+    }
 }

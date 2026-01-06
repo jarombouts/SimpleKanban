@@ -244,6 +244,12 @@ struct BoardView: View {
                                     try? store.archiveCard(card)
                                     selectedCardTitles.remove(card.title)
                                 },
+                                onDuplicateCard: { card in
+                                    if let duplicate: Card = try? store.duplicateCard(card) {
+                                        // Select the newly duplicated card
+                                        selectSingle(duplicate.title)
+                                    }
+                                },
                                 onToggleCollapse: {
                                     try? store.toggleColumnCollapsed(column.id)
                                 }
@@ -595,6 +601,16 @@ struct BoardView: View {
             if keyChar == "a" || keyChar == "A" {
                 return navigationController.handleSelectAll(currentSelection: currentSelection)
             }
+
+            // Cmd+D duplicates the selected card(s)
+            if keyChar == "d" || keyChar == "D" {
+                if selectedCardTitles.count > 1 {
+                    return .bulkDuplicate(cardTitles: selectedCardTitles)
+                } else if let title = currentSelection {
+                    return .duplicateCard(cardTitle: title)
+                }
+                return .none
+            }
         }
 
         // Regular keys
@@ -714,6 +730,22 @@ struct BoardView: View {
             selectedCardTitles = cardTitles
             return true
 
+        case .duplicateCard(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let duplicate = try? store.duplicateCard(card) {
+                // Select the newly duplicated card
+                selectSingle(duplicate.title)
+            }
+            return true
+
+        case .bulkDuplicate(let cardTitles):
+            let cards: [Card] = store.cards(withTitles: cardTitles)
+            if let duplicates = try? store.duplicateCards(cards), !duplicates.isEmpty {
+                // Select all the newly duplicated cards
+                selectedCardTitles = Set(duplicates.map { $0.title })
+            }
+            return true
+
         case .none:
             return false
         }
@@ -785,6 +817,8 @@ struct ColumnView: View {
     /// Callback for move with card title (not full Card) since we only have title from drag
     let onMoveCard: (String, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
+    /// Callback for duplicating a card
+    let onDuplicateCard: (Card) -> Void
     /// Callback to toggle the collapsed state
     let onToggleCollapse: () -> Void
 
@@ -975,6 +1009,10 @@ struct ColumnView: View {
                                 Button("Edit") {
                                     onCardDoubleTap(card)
                                 }
+                                Button("Duplicate") {
+                                    onDuplicateCard(card)
+                                }
+                                Divider()
                                 Button("Archive") {
                                     onArchiveCard(card)
                                 }

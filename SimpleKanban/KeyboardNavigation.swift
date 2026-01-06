@@ -41,6 +41,12 @@ enum NavigationResult: Equatable {
     /// Multiple cards should be moved to a different column
     case bulkMove(cardTitles: Set<String>, toColumnIndex: Int)
 
+    /// Card should be duplicated
+    case duplicateCard(cardTitle: String)
+
+    /// Multiple cards should be duplicated
+    case bulkDuplicate(cardTitles: Set<String>)
+
     /// Focus the search field
     case focusSearch
 

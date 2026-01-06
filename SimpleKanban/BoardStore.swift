@@ -364,6 +364,145 @@ public final class BoardStore: @unchecked Sendable {
         cards.removeAll { $0.title == card.title }
     }
 
+    // MARK: - Card Duplication
+
+    /// Duplicates a card, creating a copy with a modified title in the same column.
+    ///
+    /// The new card is placed immediately after the original card in the column.
+    /// The copy preserves the original's labels and body content, but gets fresh
+    /// created/modified timestamps.
+    ///
+    /// Title generation:
+    /// - If original is "My Card", copy becomes "My Card (Copy)"
+    /// - If "My Card (Copy)" exists, becomes "My Card (Copy 2)"
+    /// - Continues incrementing: "My Card (Copy 3)", etc.
+    ///
+    /// - Parameter card: The card to duplicate
+    /// - Returns: The newly created duplicate card
+    /// - Throws: CardWriterError if file operations fail
+    @discardableResult
+    public func duplicateCard(_ card: Card) throws -> Card {
+        // Generate unique copy title
+        let copyTitle: String = generateCopyTitle(for: card.title)
+
+        // Calculate position right after the original card
+        let columnCards: [Card] = cards(forColumn: card.column)
+        let newPosition: String
+        if let originalIndex: Int = columnCards.firstIndex(where: { $0.title == card.title }) {
+            if originalIndex + 1 < columnCards.count {
+                // Insert between original and next card
+                let nextCard: Card = columnCards[originalIndex + 1]
+                newPosition = LexPosition.between(card.position, and: nextCard.position)
+            } else {
+                // Original is last card, insert after
+                newPosition = LexPosition.after(card.position)
+            }
+        } else {
+            // Shouldn't happen, but fallback to after original position
+            newPosition = LexPosition.after(card.position)
+        }
+
+        // Create the duplicate card
+        let duplicate: Card = Card(
+            title: copyTitle,
+            column: card.column,
+            position: newPosition,
+            created: Date(),
+            modified: Date(),
+            labels: card.labels,
+            body: card.body
+        )
+
+        // Save to disk
+        try CardWriter.save(duplicate, in: url, isNew: true)
+
+        // Update in-memory state
+        cards.append(duplicate)
+        sortCards()
+
+        return duplicate
+    }
+
+    /// Duplicates multiple cards, creating copies in their respective columns.
+    ///
+    /// Each card is duplicated to its own column, placed after the original.
+    /// Useful for bulk duplication with multi-select.
+    ///
+    /// - Parameter cards: The cards to duplicate
+    /// - Returns: Array of newly created duplicate cards
+    /// - Throws: CardWriterError if file operations fail
+    @discardableResult
+    public func duplicateCards(_ cardsToDuplicate: [Card]) throws -> [Card] {
+        var duplicates: [Card] = []
+        // Sort by position to maintain relative order when duplicating
+        let sortedCards: [Card] = cardsToDuplicate.sorted { $0.position < $1.position }
+        for card in sortedCards {
+            let duplicate: Card = try duplicateCard(card)
+            duplicates.append(duplicate)
+        }
+        return duplicates
+    }
+
+    /// Generates a unique copy title for a card.
+    ///
+    /// Algorithm:
+    /// 1. Try "Original Title (Copy)"
+    /// 2. If exists, try "Original Title (Copy 2)", "Copy 3", etc.
+    /// 3. Handles original titles that already end with "(Copy N)"
+    ///
+    /// - Parameter originalTitle: The title to create a copy name for
+    /// - Returns: A unique title for the copy
+    private func generateCopyTitle(for originalTitle: String) -> String {
+        // First, strip any existing "(Copy)" or "(Copy N)" suffix from original
+        // This ensures "My Card (Copy)" duplicates to "My Card (Copy 2)", not "My Card (Copy) (Copy)"
+        let baseTitle: String = stripCopySuffix(from: originalTitle)
+
+        // Start with "(Copy)" and increment if needed
+        var copyNumber: Int = 1
+        var candidateTitle: String = "\(baseTitle) (Copy)"
+
+        while cards.contains(where: { $0.title == candidateTitle }) {
+            copyNumber += 1
+            candidateTitle = "\(baseTitle) (Copy \(copyNumber))"
+        }
+
+        return candidateTitle
+    }
+
+    /// Strips "(Copy)" or "(Copy N)" suffix from a title.
+    ///
+    /// Examples:
+    /// - "My Card" → "My Card"
+    /// - "My Card (Copy)" → "My Card"
+    /// - "My Card (Copy 3)" → "My Card"
+    ///
+    /// - Parameter title: The title to strip
+    /// - Returns: The base title without copy suffix
+    private func stripCopySuffix(from title: String) -> String {
+        // Match "(Copy)" or "(Copy N)" at end of string
+        // Using simple string operations instead of regex for clarity
+        let trimmed: String = title.trimmingCharacters(in: .whitespaces)
+
+        // Check for "(Copy N)" pattern
+        if let parenStart: String.Index = trimmed.lastIndex(of: "(") {
+            let suffix: String = String(trimmed[parenStart...])
+            if suffix == "(Copy)" {
+                let base: String = String(trimmed[..<parenStart]).trimmingCharacters(in: .whitespaces)
+                return base.isEmpty ? trimmed : base
+            }
+            // Check for "(Copy N)" where N is a number
+            if suffix.hasPrefix("(Copy ") && suffix.hasSuffix(")") {
+                let numberPart: String = String(suffix.dropFirst(6).dropLast())
+                if Int(numberPart) != nil {
+                    let base: String = String(trimmed[..<parenStart]).trimmingCharacters(in: .whitespaces)
+                    return base.isEmpty ? trimmed : base
+                }
+            }
+        }
+
+        return trimmed
+    }
+
     // MARK: - Bulk Card Mutations
 
     /// Archives multiple cards.
