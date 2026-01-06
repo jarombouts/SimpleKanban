@@ -31,6 +31,7 @@ extension String: @retroactive Identifiable {
 /// - Delete/Backspace: Delete selected card (with confirmation)
 /// - Cmd+Backspace: Archive selected card
 /// - Cmd+1/2/3...: Move selected card to column 1/2/3...
+/// - Cmd+Up/Down: Reorder card within column (move up/down)
 /// - Cmd+Shift+N: Create new card in current column
 /// - Escape: Clear selection
 struct BoardView: View {
@@ -603,6 +604,22 @@ struct BoardView: View {
                 return navigationController.handleCmdDelete(currentSelection: currentSelection)
             }
 
+            // Cmd+Up moves card up in column (single selection only)
+            if keyPress.key == .upArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowUp(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+Down moves card down in column (single selection only)
+            if keyPress.key == .downArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowDown(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
             // Cmd+F focuses search field
             if keyChar == "f" || keyChar == "F" {
                 return .focusSearch
@@ -715,6 +732,28 @@ struct BoardView: View {
                columnIndex < store.board.columns.count {
                 let targetColumn: Column = store.board.columns[columnIndex]
                 try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
+            }
+            return true
+
+        case .reorderCardUp(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                let columnCards: [Card] = store.cards(forColumn: card.column)
+                if let currentIndex = columnCards.firstIndex(where: { $0.title == cardTitle }),
+                   currentIndex > 0 {
+                    // Move to the position before the previous card
+                    try? store.moveCard(card, toColumn: card.column, atIndex: currentIndex - 1)
+                }
+            }
+            return true
+
+        case .reorderCardDown(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                let columnCards: [Card] = store.cards(forColumn: card.column)
+                if let currentIndex = columnCards.firstIndex(where: { $0.title == cardTitle }),
+                   currentIndex < columnCards.count - 1 {
+                    // Move to the position after the next card (index + 2 because we're inserting)
+                    try? store.moveCard(card, toColumn: card.column, atIndex: currentIndex + 2)
+                }
             }
             return true
 

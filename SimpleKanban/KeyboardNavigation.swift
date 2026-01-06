@@ -56,6 +56,12 @@ enum NavigationResult: Equatable {
     /// Create a new card in the specified column (Cmd+Shift+N)
     case newCard(inColumn: String)
 
+    /// Reorder card up within its column (Cmd+Up)
+    case reorderCardUp(cardTitle: String)
+
+    /// Reorder card down within its column (Cmd+Down)
+    case reorderCardDown(cardTitle: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -283,6 +289,58 @@ class KeyboardNavigationController {
         }
 
         return .moveCard(cardTitle: title, toColumnIndex: columnIndex)
+    }
+
+    /// Handles Cmd+Up arrow key press.
+    ///
+    /// Moves the selected card up one position within its column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowUp(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Get cards in the column to check if we can move up
+        let columnCards: [Card] = layoutProvider.cards(forColumn: card.column)
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == title }) else {
+            return .none
+        }
+
+        // Can't move up if already at top
+        if currentIndex == 0 {
+            return .none
+        }
+
+        return .reorderCardUp(cardTitle: title)
+    }
+
+    /// Handles Cmd+Down arrow key press.
+    ///
+    /// Moves the selected card down one position within its column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowDown(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Get cards in the column to check if we can move down
+        let columnCards: [Card] = layoutProvider.cards(forColumn: card.column)
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == title }) else {
+            return .none
+        }
+
+        // Can't move down if already at bottom
+        if currentIndex >= columnCards.count - 1 {
+            return .none
+        }
+
+        return .reorderCardDown(cardTitle: title)
     }
 
     // MARK: - Private Navigation Helpers

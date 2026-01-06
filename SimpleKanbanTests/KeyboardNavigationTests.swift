@@ -699,6 +699,189 @@ class NewCardResultTests: XCTestCase {
     }
 }
 
+// MARK: - Cmd+Arrow Reorder Tests
+
+class CmdArrowReorderTests: XCTestCase {
+
+    /// Helper to create a mock layout provider
+    func makeStandardLayout() -> MockBoardLayoutProvider {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "in-progress", name: "In Progress"),
+            Column(id: "done", name: "Done")
+        ]
+        return provider
+    }
+
+    /// Helper to create a card
+    func makeCard(title: String, column: String, position: String = "n") -> Card {
+        return Card(
+            title: title,
+            column: column,
+            position: position,
+            created: Date(),
+            modified: Date(),
+            labels: [],
+            body: ""
+        )
+    }
+
+    /// Test: Cmd+Up returns reorderCardUp for middle card
+    func testCmdUpReturnsReorderForMiddleCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowUp(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .reorderCardUp(cardTitle: "Card B"))
+    }
+
+    /// Test: Cmd+Up returns none for card at top
+    func testCmdUpReturnsNoneForTopCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowUp(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Up returns none with no selection
+    func testCmdUpReturnsNoneWithNoSelection() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowUp(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Down returns reorderCardDown for middle card
+    func testCmdDownReturnsReorderForMiddleCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowDown(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .reorderCardDown(cardTitle: "Card B"))
+    }
+
+    /// Test: Cmd+Down returns none for card at bottom
+    func testCmdDownReturnsNoneForBottomCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowDown(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Down returns none with no selection
+    func testCmdDownReturnsNoneWithNoSelection() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowDown(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Up returns reorderCardUp for last card (can move up)
+    func testCmdUpReturnsReorderForLastCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowUp(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .reorderCardUp(cardTitle: "Card B"))
+    }
+
+    /// Test: Cmd+Down returns reorderCardDown for first card (can move down)
+    func testCmdDownReturnsReorderForFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowDown(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .reorderCardDown(cardTitle: "Card A"))
+    }
+
+    /// Test: Cmd+Up/Down returns none for nonexistent card
+    func testCmdArrowsReturnNoneForNonexistentCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        let upResult: NavigationResult = controller.handleCmdArrowUp(currentSelection: "Nonexistent")
+        let downResult: NavigationResult = controller.handleCmdArrowDown(currentSelection: "Nonexistent")
+
+        XCTAssertEqual(upResult, .none)
+        XCTAssertEqual(downResult, .none)
+    }
+
+    /// Test: Single card - Cmd+Up returns none
+    func testCmdUpWithSingleCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Only Card", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowUp(currentSelection: "Only Card")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Single card - Cmd+Down returns none
+    func testCmdDownWithSingleCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Only Card", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowDown(currentSelection: "Only Card")
+
+        XCTAssertEqual(result, .none)
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {
