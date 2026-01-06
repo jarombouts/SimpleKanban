@@ -251,6 +251,71 @@ class KeyboardNavigationController {
         return .selectionChanged(cardTitle: lastCard.title)
     }
 
+    /// Number of cards to jump when using Option+Up/Down page navigation.
+    private let pageJumpSize: Int = 5
+
+    /// Handles Option+Up arrow key press.
+    ///
+    /// Jumps up multiple cards (page-like navigation).
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleOptionArrowUp(currentSelection: String?) -> NavigationResult {
+        // No selection - select first card
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return selectFirstCard()
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Jump up by pageJumpSize, but don't go below 0
+        let newIndex: Int = max(0, currentIndex - pageJumpSize)
+
+        // Already at or near top
+        if newIndex == currentIndex {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: columnCards[newIndex].title)
+    }
+
+    /// Handles Option+Down arrow key press.
+    ///
+    /// Jumps down multiple cards (page-like navigation).
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleOptionArrowDown(currentSelection: String?) -> NavigationResult {
+        // No selection - select first card
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return selectFirstCard()
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Jump down by pageJumpSize, but don't exceed array bounds
+        let newIndex: Int = min(columnCards.count - 1, currentIndex + pageJumpSize)
+
+        // Already at or near bottom
+        if newIndex == currentIndex {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: columnCards[newIndex].title)
+    }
+
     // MARK: - Action Keys
 
     /// Handles Enter/Return key press.

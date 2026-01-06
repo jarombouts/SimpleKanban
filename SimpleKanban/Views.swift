@@ -28,6 +28,7 @@ extension String: @retroactive Identifiable {
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
 /// - Home/End: Jump to first/last card in current column
+/// - Option+Up/Down: Page navigation (jump 5 cards)
 /// - Enter: Open selected card for editing
 /// - Delete/Backspace: Delete selected card (with confirmation)
 /// - Cmd+Backspace: Archive selected card
@@ -673,6 +674,16 @@ struct BoardView: View {
                     return .newCard(inColumn: firstColumn.id)
                 }
                 return .none
+            }
+        }
+
+        // Option+Arrow for page navigation (jump multiple cards)
+        if keyPress.modifiers.contains(.option) {
+            if keyPress.key == .upArrow {
+                return navigationController.handleOptionArrowUp(currentSelection: currentSelection)
+            }
+            if keyPress.key == .downArrow {
+                return navigationController.handleOptionArrowDown(currentSelection: currentSelection)
             }
         }
 

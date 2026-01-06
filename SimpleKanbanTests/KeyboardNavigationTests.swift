@@ -1252,6 +1252,190 @@ class CmdArrowMoveColumnTests: XCTestCase {
     }
 }
 
+// MARK: - Option+Arrow Page Navigation Tests
+
+class OptionArrowPageNavigationTests: XCTestCase {
+
+    /// Helper to create a mock layout provider
+    func makeStandardLayout() -> MockBoardLayoutProvider {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "in-progress", name: "In Progress"),
+            Column(id: "done", name: "Done")
+        ]
+        return provider
+    }
+
+    /// Helper to create a card
+    func makeCard(title: String, column: String, position: String = "n") -> Card {
+        return Card(
+            title: title,
+            column: column,
+            position: position,
+            created: Date(),
+            modified: Date(),
+            labels: [],
+            body: ""
+        )
+    }
+
+    /// Test: Option+Up jumps up 5 cards
+    func testOptionUpJumpsFiveCards() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        var cards: [Card] = []
+        for i in 0..<10 {
+            cards.append(makeCard(title: "Card \(i)", column: "todo", position: String(Character(UnicodeScalar(97 + i)!))))
+        }
+        provider.setCards(cards, forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        // Start at Card 7 (index 7), jump up 5 should go to Card 2 (index 2)
+        let result: NavigationResult = controller.handleOptionArrowUp(currentSelection: "Card 7")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card 2"))
+    }
+
+    /// Test: Option+Down jumps down 5 cards
+    func testOptionDownJumpsFiveCards() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        var cards: [Card] = []
+        for i in 0..<10 {
+            cards.append(makeCard(title: "Card \(i)", column: "todo", position: String(Character(UnicodeScalar(97 + i)!))))
+        }
+        provider.setCards(cards, forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        // Start at Card 2 (index 2), jump down 5 should go to Card 7 (index 7)
+        let result: NavigationResult = controller.handleOptionArrowDown(currentSelection: "Card 2")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card 7"))
+    }
+
+    /// Test: Option+Up near top goes to first card
+    func testOptionUpNearTopGoesToFirst() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        var cards: [Card] = []
+        for i in 0..<10 {
+            cards.append(makeCard(title: "Card \(i)", column: "todo", position: String(Character(UnicodeScalar(97 + i)!))))
+        }
+        provider.setCards(cards, forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        // Start at Card 3 (index 3), jump up 5 should go to Card 0 (index 0)
+        let result: NavigationResult = controller.handleOptionArrowUp(currentSelection: "Card 3")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card 0"))
+    }
+
+    /// Test: Option+Down near bottom goes to last card
+    func testOptionDownNearBottomGoesToLast() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        var cards: [Card] = []
+        for i in 0..<10 {
+            cards.append(makeCard(title: "Card \(i)", column: "todo", position: String(Character(UnicodeScalar(97 + i)!))))
+        }
+        provider.setCards(cards, forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        // Start at Card 6 (index 6), jump down 5 should go to Card 9 (index 9)
+        let result: NavigationResult = controller.handleOptionArrowDown(currentSelection: "Card 6")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card 9"))
+    }
+
+    /// Test: Option+Up at first card returns none
+    func testOptionUpAtFirstReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleOptionArrowUp(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Option+Down at last card returns none
+    func testOptionDownAtLastReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleOptionArrowDown(currentSelection: "Card C")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Option+Up with no selection selects first card
+    func testOptionUpNoSelectionSelectsFirst() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleOptionArrowUp(currentSelection: nil)
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Option+Down with no selection selects first card
+    func testOptionDownNoSelectionSelectsFirst() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleOptionArrowDown(currentSelection: nil)
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Option+Arrow with small list (fewer than 5 cards)
+    func testOptionArrowWithSmallList() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        // Option+Down from first card goes to last (jump 5 but only 3 cards)
+        let downResult: NavigationResult = controller.handleOptionArrowDown(currentSelection: "Card A")
+        XCTAssertEqual(downResult, .selectionChanged(cardTitle: "Card C"))
+
+        // Option+Up from last card goes to first (jump 5 but only 3 cards)
+        let upResult: NavigationResult = controller.handleOptionArrowUp(currentSelection: "Card C")
+        XCTAssertEqual(upResult, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Option+Arrow with empty board returns none
+    func testOptionArrowEmptyBoardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        let upResult: NavigationResult = controller.handleOptionArrowUp(currentSelection: nil)
+        let downResult: NavigationResult = controller.handleOptionArrowDown(currentSelection: nil)
+
+        XCTAssertEqual(upResult, .none)
+        XCTAssertEqual(downResult, .none)
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {
