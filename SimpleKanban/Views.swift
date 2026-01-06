@@ -76,6 +76,12 @@ struct BoardView: View {
     /// Whether to show the label filter popover
     @State private var showLabelFilter: Bool = false
 
+    /// Error message to show in alert (nil when no error)
+    @State private var errorMessage: String? = nil
+
+    /// Whether to show error alert
+    @State private var showErrorAlert: Bool = false
+
     // MARK: - Selection Helpers
 
     /// Returns the single selected card title, or nil if zero or multiple selected
@@ -462,9 +468,15 @@ struct BoardView: View {
                         addingCardToColumn = nil
                         // Select the newly created card
                         selectSingle(title)
+                    } catch CardWriterError.duplicateTitle(let title) {
+                        // Show duplicate title error to user
+                        errorMessage = "A card with the title \"\(title)\" already exists."
+                        showErrorAlert = true
+                        addingCardToColumn = nil
                     } catch {
-                        // Log error for debugging - card creation failed
-                        print("ERROR: Failed to create card '\(title)': \(error)")
+                        // Show generic error to user
+                        errorMessage = "Failed to create card: \(error.localizedDescription)"
+                        showErrorAlert = true
                         addingCardToColumn = nil
                     }
                 },
@@ -511,6 +523,15 @@ struct BoardView: View {
                     showBoardSettings = false
                 }
             )
+        }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            if let message = errorMessage {
+                Text(message)
+            }
         }
     }
 
