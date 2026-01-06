@@ -31,6 +31,7 @@ extension String: @retroactive Identifiable {
 /// - Delete/Backspace: Delete selected card (with confirmation)
 /// - Cmd+Backspace: Archive selected card
 /// - Cmd+1/2/3...: Move selected card to column 1/2/3...
+/// - Cmd+Shift+N: Create new card in current column
 /// - Escape: Clear selection
 struct BoardView: View {
     @Bindable var store: BoardStore
@@ -611,6 +612,20 @@ struct BoardView: View {
                 }
                 return .none
             }
+
+            // Cmd+Shift+N creates a new card in the current column (or first column if none selected)
+            if keyPress.modifiers.contains(.shift) && (keyChar == "n" || keyChar == "N") {
+                // Determine which column to add to:
+                // - If a card is selected, use that card's column
+                // - Otherwise, use the first column
+                if let title = currentSelection,
+                   let card = store.card(withTitle: title) {
+                    return .newCard(inColumn: card.column)
+                } else if let firstColumn = store.board.columns.first {
+                    return .newCard(inColumn: firstColumn.id)
+                }
+                return .none
+            }
         }
 
         // Regular keys
@@ -744,6 +759,11 @@ struct BoardView: View {
                 // Select all the newly duplicated cards
                 selectedCardTitles = Set(duplicates.map { $0.title })
             }
+            return true
+
+        case .newCard(let columnID):
+            // Open the new card modal for the specified column
+            addingCardToColumn = columnID
             return true
 
         case .none:

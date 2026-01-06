@@ -668,6 +668,37 @@ class EdgeCaseTests: XCTestCase {
     }
 }
 
+// MARK: - New Card Result Tests
+
+class NewCardResultTests: XCTestCase {
+
+    /// Test: NavigationResult.newCard is equatable with matching column
+    func testNewCardResultEquatableMatching() {
+        let result1: NavigationResult = .newCard(inColumn: "todo")
+        let result2: NavigationResult = .newCard(inColumn: "todo")
+
+        XCTAssertEqual(result1, result2)
+    }
+
+    /// Test: NavigationResult.newCard is not equal with different columns
+    func testNewCardResultNotEqualDifferentColumns() {
+        let result1: NavigationResult = .newCard(inColumn: "todo")
+        let result2: NavigationResult = .newCard(inColumn: "done")
+
+        XCTAssertNotEqual(result1, result2)
+    }
+
+    /// Test: NavigationResult.newCard is distinct from other results
+    func testNewCardResultDistinctFromOtherResults() {
+        let newCard: NavigationResult = .newCard(inColumn: "todo")
+        let selectionChanged: NavigationResult = .selectionChanged(cardTitle: "todo")
+        let none: NavigationResult = .none
+
+        XCTAssertNotEqual(newCard, selectionChanged)
+        XCTAssertNotEqual(newCard, none)
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {

@@ -53,6 +53,9 @@ enum NavigationResult: Equatable {
     /// Select all cards in the current column (Cmd+A)
     case selectAllInColumn(cardTitles: Set<String>)
 
+    /// Create a new card in the specified column (Cmd+Shift+N)
+    case newCard(inColumn: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }

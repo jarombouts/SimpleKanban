@@ -163,6 +163,7 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [x] `Cmd+O` open board
 - [x] `Cmd+W` close board
 - [x] `Cmd+F` search/filter
+- [x] `Cmd+Shift+N` new card in current column
 - [x] Arrow keys navigate cards
 - [x] `Cmd+1/2/3` move to column 1/2/3
 - [x] `Cmd+Backspace` archive card
