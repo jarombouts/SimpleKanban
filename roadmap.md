@@ -188,7 +188,7 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 ### 5.4 Visual Polish
 - [x] Card colors based on labels
 - [x] Smooth drag animations
-- [ ] Column collapse/expand
+- [x] Column collapse/expand
 - [x] Dark mode support (system default)
 
 ### 5.5 Multi-Select & Bulk Operations
