@@ -44,6 +44,9 @@ enum NavigationResult: Equatable {
     /// Focus the search field
     case focusSearch
 
+    /// Select all cards in the current column (Cmd+A)
+    case selectAllInColumn(cardTitles: Set<String>)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -212,6 +215,37 @@ class KeyboardNavigationController {
             return .selectionCleared
         }
         return .none
+    }
+
+    /// Handles Cmd+A key press.
+    ///
+    /// Selects all cards in the column containing the currently selected card.
+    /// If no card is selected, selects all cards in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result with all card titles in the column
+    func handleSelectAll(currentSelection: String?) -> NavigationResult {
+        // Find which column to select all from
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        if columnCards.isEmpty {
+            return .none
+        }
+
+        let cardTitles: Set<String> = Set(columnCards.map { $0.title })
+        return .selectAllInColumn(cardTitles: cardTitles)
     }
 
     /// Handles Cmd+Number key press (Cmd+1, Cmd+2, etc.).

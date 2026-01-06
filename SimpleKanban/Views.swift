@@ -194,6 +194,25 @@ struct BoardView: View {
                     }
                     .padding(padding)
                 }
+                // Overlay "No results" message when filtering returns no cards
+                .overlay {
+                    if store.isFiltering && store.filteredCards.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.tertiary)
+                            Text("No cards match your filter")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            Button("Clear Filter") {
+                                store.clearFilters()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+                    }
+                }
             }
             .focusable()
             .focused($isBoardFocused)
@@ -336,15 +355,10 @@ struct BoardView: View {
                     }
                 )
 
-                // Git sync status indicator (if git repo)
+                // Git sync status indicator (only shown if board is in a git repository)
                 if let gitSync = gitSync {
                     Divider()
                     GitStatusIndicator(gitSync: gitSync)
-                } else {
-                    // Debug: show when gitSync is nil
-                    Text("(no git)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
 
                 // Settings button
@@ -485,6 +499,11 @@ struct BoardView: View {
             if keyChar == "f" || keyChar == "F" {
                 return .focusSearch
             }
+
+            // Cmd+A selects all cards in the current column
+            if keyChar == "a" || keyChar == "A" {
+                return navigationController.handleSelectAll(currentSelection: currentSelection)
+            }
         }
 
         // Regular keys
@@ -580,6 +599,10 @@ struct BoardView: View {
 
         case .focusSearch:
             isSearchFocused = true
+            return true
+
+        case .selectAllInColumn(let cardTitles):
+            selectedCardTitles = cardTitles
             return true
 
         case .none:
@@ -709,6 +732,20 @@ struct ColumnView: View {
             // Cards list - cards visually shift to show insertion gap
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
+                    // Empty state when no cards in column
+                    if cards.isEmpty && !isFiltering {
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus.rectangle.on.rectangle")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.tertiary)
+                            Text("No cards yet")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+
                     ForEach(Array(cards.enumerated()), id: \.element.title) { index, card in
                         // Add gap before this card if dropping here
                         if dropTargetIndex == index {
@@ -908,12 +945,16 @@ struct CardDropDelegate: DropDelegate {
 /// - First line of body (if any)
 /// - Label chips (colored badges)
 /// - Selection highlight when selected via keyboard
+/// - Hover effect for better interactivity feedback
 struct CardView: View {
     let card: Card
     let labels: [CardLabel]
 
     /// Whether this card is currently selected (keyboard navigation)
     var isSelected: Bool = false
+
+    /// Whether the mouse is hovering over this card
+    @State private var isHovered: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -955,7 +996,12 @@ struct CardView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
-        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+        .shadow(color: .black.opacity(isHovered ? 0.2 : 0.1), radius: isHovered ? 4 : 2, y: isHovered ? 2 : 1)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
