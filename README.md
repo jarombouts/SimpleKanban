@@ -170,6 +170,7 @@ SimpleKanban/
 ├── Models.swift              # Card, Board, Column data structures
 ├── FileSystem.swift          # File I/O operations
 ├── FileWatcher.swift         # External change detection
+├── GitSync.swift             # Git status, auto-sync, push
 ├── KeyboardNavigation.swift  # Testable navigation logic
 └── Views.swift               # SwiftUI views
 ```

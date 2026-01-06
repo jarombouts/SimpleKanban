@@ -405,6 +405,83 @@ struct CardWriterTests {
             try CardWriter.save(card2, in: tempDir, isNew: true)
         }
     }
+
+    @Test("Throws on empty column")
+    func throwsOnEmptyColumn() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // Create card with empty column - should fail
+        let card: Card = Card(
+            title: "Card With No Column",
+            column: "",
+            position: "n"
+        )
+
+        #expect(throws: CardWriterError.self) {
+            try CardWriter.save(card, in: tempDir, isNew: true)
+        }
+    }
+
+    @Test("Detects duplicate title even when slugs differ")
+    func detectsDuplicateTitleWithDifferentSlug() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // Manually create a card file with a slug that doesn't match its title
+        // This simulates a card that was renamed externally but kept its old filename
+        let mismatchedCard: String = """
+            ---
+            title: My Actual Title
+            column: todo
+            position: n
+            ---
+            Some content.
+            """
+        try mismatchedCard.write(
+            to: tempDir.appendingPathComponent("cards/todo/old-different-slug.md"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        // Now try to create a new card with the same title (but different slug)
+        let newCard: Card = Card(
+            title: "My Actual Title",
+            column: "done",
+            position: "t"
+        )
+
+        // Should throw because title already exists, even though slug would be different
+        #expect(throws: CardWriterError.self) {
+            try CardWriter.save(newCard, in: tempDir, isNew: true)
+        }
+    }
+
+    @Test("Throws on duplicate title in different column")
+    func throwsOnDuplicateTitleAcrossColumns() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // Create first card in todo
+        let card1: Card = Card(
+            title: "Unique Title",
+            column: "todo",
+            position: "n"
+        )
+        try CardWriter.save(card1, in: tempDir, isNew: true)
+
+        // Try to create second card with same title in done column
+        let card2: Card = Card(
+            title: "Unique Title",
+            column: "done",
+            position: "n"
+        )
+
+        // Should throw even though it's in a different column
+        #expect(throws: CardWriterError.self) {
+            try CardWriter.save(card2, in: tempDir, isNew: true)
+        }
+    }
 }
 
 // MARK: - BoardWriter Tests

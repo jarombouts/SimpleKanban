@@ -99,6 +99,13 @@ public final class BoardStore: @unchecked Sendable {
     ///   - body: Optional card body content
     /// - Throws: CardWriterError.duplicateTitle if title already exists
     public func addCard(title: String, toColumn columnID: String, body: String = "") throws {
+        // Fast path: check for duplicate title in memory first
+        // This catches duplicates immediately without disk I/O, and serves as a
+        // belt-and-suspenders check alongside CardWriter's file-based check
+        if cards.contains(where: { $0.title == title }) {
+            throw CardWriterError.duplicateTitle(title)
+        }
+
         // Calculate position (after last card in column, or first position)
         let columnCards: [Card] = cards(forColumn: columnID)
         let position: String

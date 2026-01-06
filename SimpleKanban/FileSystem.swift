@@ -150,6 +150,11 @@ public enum CardWriter {
         previousColumn: String? = nil,
         isNew: Bool = false
     ) throws {
+        // Validate that column is non-empty - cards must belong to a column
+        guard !card.column.isEmpty else {
+            throw CardWriterError.fileOperationFailed("Card column cannot be empty")
+        }
+
         let fileManager: FileManager = FileManager.default
         let cardsURL: URL = boardURL.appendingPathComponent("cards")
 
@@ -164,7 +169,12 @@ public enum CardWriter {
         let newPath: URL = columnDir.appendingPathComponent(newFilename)
 
         // Check for duplicate title on new cards - must check ALL column directories
-        // because titles must be unique across the entire board
+        // because titles must be unique across the entire board.
+        //
+        // We compare actual parsed titles, not slugified filenames, because:
+        // - A card could be renamed but keep its old filename
+        // - A card could be created externally with a different slug
+        // - Two different slugs could theoretically have the same title
         if isNew {
             if let enumerator = fileManager.enumerator(
                 at: cardsURL,
@@ -172,9 +182,14 @@ public enum CardWriter {
                 options: [.skipsHiddenFiles]
             ) {
                 for case let existingURL as URL in enumerator {
-                    if existingURL.pathExtension == "md" &&
-                       existingURL.deletingPathExtension().lastPathComponent == newSlug {
-                        throw CardWriterError.duplicateTitle(card.title)
+                    if existingURL.pathExtension == "md" {
+                        // Parse the card file to get the actual title
+                        if let content = try? String(contentsOf: existingURL, encoding: .utf8),
+                           let existingCard = try? Card.parse(from: content) {
+                            if existingCard.title == card.title {
+                                throw CardWriterError.duplicateTitle(card.title)
+                            }
+                        }
                     }
                 }
             }

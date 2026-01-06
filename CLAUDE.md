@@ -8,6 +8,13 @@ Native macOS Kanban board app. Swift/SwiftUI only, no external dependencies. Sta
 
 See `roadmap.md` for implementation plan.
 
+### Development Backlog
+
+Our backlog lives in a **separate repository** at `../SimpleKanbanBacklog` (not inside this project repo). This:
+- Keeps project code separate from board data
+- Tests git sync with a real remote
+- Demonstrates the recommended setup: one repo per board
+
 ## Code Style
 
 ### Comments
@@ -265,7 +272,7 @@ Key implementation details:
 | Labels | Defined in board.md | Consistent colors, typo prevention |
 | Archive | Move to archive/ with date prefix | Clean separation, chronological sorting |
 | External changes | Prompt user | Explicit conflict resolution |
-| Git features | None (v1) | Keep simple, use external tools |
+| Git features | Auto-sync + push | Fetch/pull every 60s, push button in toolbar |
 | Interaction | Keyboard + mouse | Power user friendly |
 | Windows | Single board per window | Simple for v1 |
 | Card template | Defined in board.md | Consistency, but not enforced |

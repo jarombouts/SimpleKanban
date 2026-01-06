@@ -232,6 +232,11 @@ struct BoardView: View {
                 if let gitSync = gitSync {
                     Divider()
                     GitStatusIndicator(gitSync: gitSync)
+                } else {
+                    // Debug: show when gitSync is nil
+                    Text("(no git)")
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
@@ -1048,9 +1053,17 @@ struct GitStatusIndicator: View {
     @ViewBuilder
     private var statusView: some View {
         switch gitSync.status {
-        case .notGitRepo, .noRemote:
-            // Don't show anything
-            EmptyView()
+        case .notGitRepo:
+            // Debug: show status
+            Text("(not git repo)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+
+        case .noRemote:
+            // Debug: show status
+            Text("(no remote)")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
 
         case .synced:
             HStack(spacing: 4) {

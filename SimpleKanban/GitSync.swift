@@ -339,11 +339,16 @@ public final class GitSync: @unchecked Sendable {
         await updateStatus()
     }
 
-    /// Checks if the working tree has uncommitted changes.
+    /// Checks if the board folder has uncommitted changes.
     ///
-    /// - Returns: true if there are staged or unstaged changes
+    /// Only checks the board folder (current directory), not the entire repo.
+    /// This allows boards to live inside larger repos without being affected
+    /// by uncommitted changes elsewhere in the repo.
+    ///
+    /// - Returns: true if there are staged or unstaged changes in the board folder
     public func hasUncommittedChanges() async -> Bool {
-        let result: (output: String, exitCode: Int32) = await runGit(["status", "--porcelain"])
+        // Use "-- ." to limit status check to the board folder only
+        let result: (output: String, exitCode: Int32) = await runGit(["status", "--porcelain", "--", "."])
         return !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
