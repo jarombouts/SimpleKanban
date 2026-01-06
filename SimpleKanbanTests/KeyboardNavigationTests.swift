@@ -1436,6 +1436,186 @@ class OptionArrowPageNavigationTests: XCTestCase {
     }
 }
 
+// MARK: - Shift+Arrow Extend Selection Tests
+
+class ShiftArrowExtendSelectionTests: XCTestCase {
+
+    /// Helper to create a mock layout provider
+    func makeStandardLayout() -> MockBoardLayoutProvider {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "in-progress", name: "In Progress"),
+            Column(id: "done", name: "Done")
+        ]
+        return provider
+    }
+
+    /// Helper to create a card
+    func makeCard(title: String, column: String, position: String = "n") -> Card {
+        return Card(
+            title: title,
+            column: column,
+            position: position,
+            created: Date(),
+            modified: Date(),
+            labels: [],
+            body: ""
+        )
+    }
+
+    /// Test: Shift+Up returns extendSelectionUp with card title
+    func testShiftUpReturnsExtendSelectionUp() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowUp(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .extendSelectionUp(toCardTitle: "Card A"))
+    }
+
+    /// Test: Shift+Down returns extendSelectionDown with card title
+    func testShiftDownReturnsExtendSelectionDown() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowDown(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .extendSelectionDown(toCardTitle: "Card C"))
+    }
+
+    /// Test: Shift+Up at first card returns none
+    func testShiftUpAtFirstCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowUp(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Shift+Down at last card returns none
+    func testShiftDownAtLastCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowDown(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Shift+Up with no selection acts like regular arrow up
+    func testShiftUpNoSelectionActsLikeArrowUp() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowUp(currentSelection: nil)
+
+        // Should select first card (like regular arrow behavior)
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Shift+Down with no selection acts like regular arrow down
+    func testShiftDownNoSelectionActsLikeArrowDown() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowDown(currentSelection: nil)
+
+        // Should select first card (like regular arrow behavior)
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Shift+Up from last card extends to second-to-last
+    func testShiftUpFromLastCardExtendsToSecondToLast() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowUp(currentSelection: "Card C")
+
+        XCTAssertEqual(result, .extendSelectionUp(toCardTitle: "Card B"))
+    }
+
+    /// Test: Shift+Down from first card extends to second
+    func testShiftDownFromFirstCardExtendsToSecond() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleShiftArrowDown(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .extendSelectionDown(toCardTitle: "Card B"))
+    }
+
+    /// Test: Shift+Arrow with nonexistent card acts like regular arrow (selects first card)
+    func testShiftArrowNonexistentCardActsLikeArrow() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        // Nonexistent card is treated like "no selection" which falls back to regular arrow behavior
+        let upResult: NavigationResult = controller.handleShiftArrowUp(currentSelection: "Nonexistent")
+        let downResult: NavigationResult = controller.handleShiftArrowDown(currentSelection: "Nonexistent")
+
+        XCTAssertEqual(upResult, .selectionChanged(cardTitle: "Card A"))
+        XCTAssertEqual(downResult, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Shift+Arrow with single card column returns none (up) or none (down)
+    func testShiftArrowSingleCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Only Card", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        let upResult: NavigationResult = controller.handleShiftArrowUp(currentSelection: "Only Card")
+        let downResult: NavigationResult = controller.handleShiftArrowDown(currentSelection: "Only Card")
+
+        XCTAssertEqual(upResult, .none)
+        XCTAssertEqual(downResult, .none)
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {

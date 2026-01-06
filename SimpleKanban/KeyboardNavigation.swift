@@ -68,6 +68,12 @@ enum NavigationResult: Equatable {
     /// Move card to next column (Cmd+Right)
     case moveCardToNextColumn(cardTitle: String)
 
+    /// Extend selection up to include the previous card (Shift+Up)
+    case extendSelectionUp(toCardTitle: String)
+
+    /// Extend selection down to include the next card (Shift+Down)
+    case extendSelectionDown(toCardTitle: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -314,6 +320,66 @@ class KeyboardNavigationController {
         }
 
         return .selectionChanged(cardTitle: columnCards[newIndex].title)
+    }
+
+    /// Handles Shift+Up arrow key press.
+    ///
+    /// Extends the selection to include the previous card.
+    /// If no card is selected, behaves like regular arrow up.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleShiftArrowUp(currentSelection: String?) -> NavigationResult {
+        // No selection - act like regular arrow up
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return handleArrowUp(currentSelection: currentSelection)
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Can't extend up if already at top
+        if currentIndex == 0 {
+            return .none
+        }
+
+        // Return the card to extend selection to
+        let previousCard: Card = columnCards[currentIndex - 1]
+        return .extendSelectionUp(toCardTitle: previousCard.title)
+    }
+
+    /// Handles Shift+Down arrow key press.
+    ///
+    /// Extends the selection to include the next card.
+    /// If no card is selected, behaves like regular arrow down.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleShiftArrowDown(currentSelection: String?) -> NavigationResult {
+        // No selection - act like regular arrow down
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return handleArrowDown(currentSelection: currentSelection)
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Can't extend down if already at bottom
+        if currentIndex >= columnCards.count - 1 {
+            return .none
+        }
+
+        // Return the card to extend selection to
+        let nextCard: Card = columnCards[currentIndex + 1]
+        return .extendSelectionDown(toCardTitle: nextCard.title)
     }
 
     // MARK: - Action Keys

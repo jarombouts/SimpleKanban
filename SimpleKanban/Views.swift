@@ -27,6 +27,7 @@ extension String: @retroactive Identifiable {
 ///
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
+/// - Shift+Up/Down: Extend selection up/down (multi-select)
 /// - Home/End: Jump to first/last card in current column
 /// - Option+Up/Down: Page navigation (jump 5 cards)
 /// - Enter: Open selected card for editing
@@ -687,6 +688,16 @@ struct BoardView: View {
             }
         }
 
+        // Shift+Arrow for extending selection
+        if keyPress.modifiers.contains(.shift) {
+            if keyPress.key == .upArrow {
+                return navigationController.handleShiftArrowUp(currentSelection: currentSelection)
+            }
+            if keyPress.key == .downArrow {
+                return navigationController.handleShiftArrowDown(currentSelection: currentSelection)
+            }
+        }
+
         // Regular keys
         switch keyPress.key {
         case .upArrow:
@@ -727,6 +738,16 @@ struct BoardView: View {
         switch result {
         case .selectionChanged(let cardTitle):
             selectSingle(cardTitle)
+            return true
+
+        case .extendSelectionUp(let toCardTitle):
+            // Extend selection using selectRange (like Shift+Click)
+            selectRange(to: toCardTitle)
+            return true
+
+        case .extendSelectionDown(let toCardTitle):
+            // Extend selection using selectRange (like Shift+Click)
+            selectRange(to: toCardTitle)
             return true
 
         case .selectionCleared:
