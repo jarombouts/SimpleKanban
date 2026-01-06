@@ -1095,19 +1095,28 @@ struct BoardStoreUndoTests {
         defer { cleanup(tempDir) }
 
         let undoManager: UndoManager = UndoManager()
+        // Disable automatic grouping by event - we'll group manually for test reliability
+        // This is necessary because Swift Testing doesn't run a full run loop like AppKit would
+        undoManager.groupsByEvent = false
         let store: BoardStore = try BoardStore(url: tempDir)
         store.undoManager = undoManager
 
-        // Add card
+        // Add card (with explicit grouping for test reliability)
+        undoManager.beginUndoGrouping()
         try store.addCard(title: "Card 1", toColumn: "todo")
+        undoManager.endUndoGrouping()
         #expect(store.cards.count == 1)
 
-        // Move card
+        // Move card (with explicit grouping)
+        undoManager.beginUndoGrouping()
         try store.moveCard(store.cards[0], toColumn: "done")
+        undoManager.endUndoGrouping()
         #expect(store.cards[0].column == "done")
 
-        // Add another card
+        // Add another card (with explicit grouping)
+        undoManager.beginUndoGrouping()
         try store.addCard(title: "Card 2", toColumn: "todo")
+        undoManager.endUndoGrouping()
         #expect(store.cards.count == 2)
 
         // Undo add card 2
