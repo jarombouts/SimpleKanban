@@ -352,6 +352,80 @@ public final class GitSync: @unchecked Sendable {
         return !result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    /// Gets the list of changed files in the board folder.
+    ///
+    /// - Returns: Array of (status, filename) tuples, e.g., [("M", "board.md"), ("A", "cards/todo/new-card.md")]
+    public func getChangedFiles() async -> [(status: String, file: String)] {
+        let result: (output: String, exitCode: Int32) = await runGit(["status", "--porcelain", "--", "."])
+        guard result.exitCode == 0 else { return [] }
+
+        var files: [(status: String, file: String)] = []
+        let lines: [String] = result.output.components(separatedBy: "\n")
+        for line in lines {
+            let trimmed: String = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.count > 2 else { continue }
+            let statusCode: String = String(trimmed.prefix(2)).trimmingCharacters(in: .whitespaces)
+            let filename: String = String(trimmed.dropFirst(3))
+            if !filename.isEmpty {
+                files.append((status: statusCode, file: filename))
+            }
+        }
+        return files
+    }
+
+    /// Commits changes in the board folder with the given message.
+    ///
+    /// Only stages files within the board folder (board.md, cards/, archive/).
+    /// This keeps commits focused on board changes even if the board is inside a larger repo.
+    ///
+    /// - Parameters:
+    ///   - message: The commit message
+    ///   - andPush: If true, also pushes after committing
+    /// - Throws: GitSyncError if the commit or push fails
+    @MainActor
+    public func commit(message: String, andPush: Bool = false) async throws {
+        guard !message.isEmpty else {
+            throw GitSyncError.emptyCommitMessage
+        }
+
+        let previousStatus: Status = status
+        status = .syncing
+
+        // Stage all changes in the board folder
+        // Using "-- ." limits to current directory (the board folder)
+        let addResult: (output: String, exitCode: Int32) = await runGit(["add", "--", "."])
+        if addResult.exitCode != 0 {
+            status = previousStatus
+            throw GitSyncError.stagingFailed(addResult.output)
+        }
+
+        // Commit with the provided message
+        let commitResult: (output: String, exitCode: Int32) = await runGit(["commit", "-m", message])
+        if commitResult.exitCode != 0 {
+            status = previousStatus
+            // Check if it's "nothing to commit" which isn't really an error
+            if commitResult.output.contains("nothing to commit") {
+                throw GitSyncError.nothingToCommit
+            }
+            throw GitSyncError.commitFailed(commitResult.output)
+        }
+
+        // Optionally push
+        if andPush {
+            guard let branch: String = currentBranch else {
+                await updateStatus()
+                throw GitSyncError.noBranch
+            }
+            let pushResult: (output: String, exitCode: Int32) = await runGit(["push", "origin", branch])
+            if pushResult.exitCode != 0 {
+                await updateStatus()
+                throw GitSyncError.pushFailed(pushResult.output)
+            }
+        }
+
+        await updateStatus()
+    }
+
     /// Gets the number of commits ahead/behind the remote.
     ///
     /// - Returns: Tuple of (ahead, behind) counts, or nil if not available
@@ -449,6 +523,10 @@ public enum GitSyncError: Error, LocalizedError {
     case pullFailed(String)
     case pushFailed(String)
     case nothingToPush
+    case emptyCommitMessage
+    case stagingFailed(String)
+    case commitFailed(String)
+    case nothingToCommit
 
     public var errorDescription: String? {
         switch self {
@@ -466,6 +544,14 @@ public enum GitSyncError: Error, LocalizedError {
             return "Push failed: \(output)"
         case .nothingToPush:
             return "No local commits to push"
+        case .emptyCommitMessage:
+            return "Commit message cannot be empty"
+        case .stagingFailed(let output):
+            return "Failed to stage changes: \(output)"
+        case .commitFailed(let output):
+            return "Commit failed: \(output)"
+        case .nothingToCommit:
+            return "No changes to commit"
         }
     }
 }

@@ -291,7 +291,54 @@ struct SimpleKanbanApp: App {
     @State private var showOpenPanel: Bool = false
     @State private var errorMessage: String? = nil
     @State private var hasAttemptedAutoLoad: Bool = false
+    @State private var showPushConfirmation: Bool = false
     @StateObject private var recentBoardsManager: RecentBoardsManager = RecentBoardsManager.shared
+
+    // MARK: - Git Menu Computed Properties
+
+    /// Whether git sync is enabled (repo exists with remote)
+    private var gitSyncEnabled: Bool {
+        guard let sync = gitSync else { return false }
+        switch sync.status {
+        case .notGitRepo, .noRemote:
+            return false
+        default:
+            return true
+        }
+    }
+
+    /// Whether we can push (have local commits)
+    private var gitSyncCanPush: Bool {
+        guard let sync = gitSync else { return false }
+        return sync.status.canPush
+    }
+
+    /// Status text for the Git menu
+    private var gitStatusText: String {
+        guard let sync = gitSync else { return "No board open" }
+        switch sync.status {
+        case .notGitRepo:
+            return "Not a git repository"
+        case .noRemote:
+            return "No remote configured"
+        case .synced:
+            return "✓ Synced"
+        case .behind(let count):
+            return "↓ \(count) behind"
+        case .ahead(let count):
+            return "↑ \(count) ahead"
+        case .diverged(let ahead, let behind):
+            return "↑\(ahead) ↓\(behind) diverged"
+        case .uncommitted:
+            return "● Uncommitted changes"
+        case .syncing:
+            return "Syncing..."
+        case .conflict:
+            return "⚠ Merge conflict"
+        case .error(let msg):
+            return "Error: \(msg)"
+        }
+    }
 
     var body: some Scene {
         WindowGroup {
@@ -331,6 +378,20 @@ struct SimpleKanbanApp: App {
                     Text(error)
                 }
             }
+            .alert("Push to Remote", isPresented: $showPushConfirmation) {
+                Button("Cancel", role: .cancel) {}
+                Button("Push") {
+                    Task {
+                        do {
+                            try await gitSync?.push()
+                        } catch {
+                            errorMessage = "Push failed: \(error.localizedDescription)"
+                        }
+                    }
+                }
+            } message: {
+                Text("Push local commits to origin?")
+            }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -351,6 +412,29 @@ struct SimpleKanbanApp: App {
                 }
                 .keyboardShortcut("w")
                 .disabled(store == nil)
+            }
+
+            // Git menu for sync operations
+            CommandMenu("Git") {
+                Button("Sync Now") {
+                    Task {
+                        await gitSync?.sync()
+                    }
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(gitSync == nil || !gitSyncEnabled)
+
+                Button("Push...") {
+                    showPushConfirmation = true
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(gitSync == nil || !gitSyncCanPush)
+
+                Divider()
+
+                // Status display (read-only)
+                Text(gitStatusText)
+                    .foregroundStyle(.secondary)
             }
         }
     }

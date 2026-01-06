@@ -807,47 +807,65 @@ struct NewCardView: View {
     @State private var cardBody: String = ""
     @FocusState private var isTitleFocused: Bool
 
+    // Modal size constraints
+    // Min: 400x640, Max: 800x1280
+    // Size scales with window, leaving ~25% padding on each side
+    private let minWidth: CGFloat = 400
+    private let maxWidth: CGFloat = 800
+    private let minHeight: CGFloat = 640
+    private let maxHeight: CGFloat = 1280
+
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Button("Cancel") { onCancel() }
-                    .keyboardShortcut(.escape)
+        GeometryReader { geometry in
+            // Calculate responsive size based on available space
+            // Target: 50% of available space (25% padding on each side)
+            let targetWidth: CGFloat = min(maxWidth, max(minWidth, geometry.size.width * 0.5))
+            let targetHeight: CGFloat = min(maxHeight, max(minHeight, geometry.size.height * 0.5))
 
-                Spacer()
+            VStack(spacing: 0) {
+                // Header
+                HStack {
+                    Button("Cancel") { onCancel() }
+                        .keyboardShortcut(.escape)
 
-                Text("New Card")
-                    .font(.headline)
+                    Spacer()
 
-                Spacer()
+                    Text("New Card")
+                        .font(.headline)
 
-                // Use columnID directly - no state involved, no timing issues
-                Button("Create") { onSave(title, columnID, cardBody) }
-                    .keyboardShortcut(.return)
-                    .disabled(title.isEmpty)
-            }
-            .padding()
+                    Spacer()
 
-            Divider()
-
-            // Content
-            Form {
-                Section("Title") {
-                    TextField("Card title", text: $title)
-                        .textFieldStyle(.plain)
-                        .font(.title3)
-                        .focused($isTitleFocused)
+                    // Use columnID directly - no state involved, no timing issues
+                    Button("Create") { onSave(title, columnID, cardBody) }
+                        .keyboardShortcut(.return)
+                        .disabled(title.isEmpty)
                 }
+                .padding()
 
-                Section("Description (optional)") {
-                    TextEditor(text: $cardBody)
-                        .font(.body)
-                        .frame(minHeight: 100)
+                Divider()
+
+                // Content
+                Form {
+                    Section("Title") {
+                        TextField("Card title", text: $title)
+                            .textFieldStyle(.plain)
+                            .font(.title3)
+                            .focused($isTitleFocused)
+                    }
+
+                    Section("Description (optional)") {
+                        TextEditor(text: $cardBody)
+                            .font(.body)
+                            .frame(minHeight: 200)
+                    }
                 }
+                .formStyle(.grouped)
             }
-            .formStyle(.grouped)
+            .frame(width: targetWidth, height: targetHeight)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: 400, height: 300)
+        .frame(minWidth: minWidth, minHeight: minHeight)
+        .frame(maxWidth: maxWidth, maxHeight: maxHeight)
         .onAppear {
             isTitleFocused = true
         }
@@ -993,15 +1011,19 @@ struct DeleteToolbarButton: View {
 
 // MARK: - Git Status Indicator
 
-/// Displays git sync status in the toolbar with push button.
+/// Displays git sync status in the toolbar with push/commit buttons.
 ///
 /// Shows status icon and text. When there are unpushed commits,
-/// displays a Push button with confirmation dialog.
+/// displays a Push button with confirmation dialog. When there are
+/// uncommitted changes, shows a Commit button that opens a modal.
 struct GitStatusIndicator: View {
     @Bindable var gitSync: GitSync
 
     /// Whether to show the push confirmation dialog
     @State private var showPushConfirmation: Bool = false
+
+    /// Whether to show the commit modal
+    @State private var showCommitModal: Bool = false
 
     /// Error message to display in alert
     @State private var errorMessage: String?
@@ -1014,14 +1036,29 @@ struct GitStatusIndicator: View {
             // Status indicator
             statusView
 
+            // Commit button (when we have uncommitted changes)
+            if case .uncommitted = gitSync.status {
+                Button(action: {
+                    showCommitModal = true
+                }) {
+                    Label("Commit", systemImage: "checkmark.circle")
+                }
+                .help("Commit changes to git")
+            }
+
             // Push button (only when we have commits to push)
             if gitSync.status.canPush {
                 Button(action: {
                     showPushConfirmation = true
                 }) {
-                    Label("Push", systemImage: "arrow.up.circle")
+                    Label("Sync", systemImage: "arrow.up.circle")
                 }
                 .help("Push local commits to remote")
+            }
+        }
+        .sheet(isPresented: $showCommitModal) {
+            CommitModalView(gitSync: gitSync) {
+                showCommitModal = false
             }
         }
         .alert("Push to Remote", isPresented: $showPushConfirmation) {
@@ -1153,6 +1190,184 @@ struct GitStatusIndicator: View {
         } catch {
             errorMessage = error.localizedDescription
             showErrorAlert = true
+        }
+    }
+}
+
+// MARK: - Commit Modal
+
+/// Modal for committing changes to git with an optional push.
+///
+/// Shows the list of changed files and a commit message field.
+/// Users can either "Commit" (local only) or "Commit & Push" (commit + push).
+struct CommitModalView: View {
+    @Bindable var gitSync: GitSync
+    let onDismiss: () -> Void
+
+    @State private var commitMessage: String = ""
+    @State private var changedFiles: [(status: String, file: String)] = []
+    @State private var isLoading: Bool = true
+    @State private var isCommitting: Bool = false
+    @State private var errorMessage: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button("Cancel") { onDismiss() }
+                    .keyboardShortcut(.escape)
+
+                Spacer()
+
+                Text("Commit Changes")
+                    .font(.headline)
+
+                Spacer()
+
+                // Spacer button to balance header
+                Button("Cancel") { }
+                    .opacity(0)
+                    .disabled(true)
+            }
+            .padding()
+
+            Divider()
+
+            if isLoading {
+                Spacer()
+                ProgressView("Loading changes...")
+                Spacer()
+            } else {
+                // Changed files list
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Changed Files (\(changedFiles.count))")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    if changedFiles.isEmpty {
+                        Text("No changes to commit")
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    } else {
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 4) {
+                                ForEach(changedFiles, id: \.file) { change in
+                                    HStack(spacing: 8) {
+                                        Text(statusLabel(for: change.status))
+                                            .font(.caption)
+                                            .foregroundStyle(statusColor(for: change.status))
+                                            .frame(width: 20)
+                                        Text(change.file)
+                                            .font(.system(.caption, design: .monospaced))
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                        Spacer()
+                                    }
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 150)
+                    }
+                }
+                .padding()
+
+                Divider()
+
+                // Commit message
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Commit Message")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    TextField("Describe your changes...", text: $commitMessage, axis: .vertical)
+                        .textFieldStyle(.plain)
+                        .lineLimit(3...6)
+                        .padding(8)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .cornerRadius(6)
+                }
+                .padding()
+
+                // Error message
+                if let error = errorMessage {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                        .padding(.horizontal)
+                }
+
+                Divider()
+
+                // Action buttons
+                HStack(spacing: 12) {
+                    Spacer()
+
+                    Button("Commit") {
+                        Task {
+                            await performCommit(andPush: false)
+                        }
+                    }
+                    .disabled(commitMessage.isEmpty || changedFiles.isEmpty || isCommitting)
+
+                    Button("Commit & Sync") {
+                        Task {
+                            await performCommit(andPush: true)
+                        }
+                    }
+                    .keyboardShortcut(.return)
+                    .disabled(commitMessage.isEmpty || changedFiles.isEmpty || isCommitting)
+                }
+                .padding()
+            }
+        }
+        .frame(width: 450, height: 400)
+        .task {
+            await loadChangedFiles()
+        }
+    }
+
+    /// Loads the list of changed files from git
+    private func loadChangedFiles() async {
+        isLoading = true
+        changedFiles = await gitSync.getChangedFiles()
+        isLoading = false
+    }
+
+    /// Commits changes with optional push
+    private func performCommit(andPush: Bool) async {
+        isCommitting = true
+        errorMessage = nil
+
+        do {
+            try await gitSync.commit(message: commitMessage, andPush: andPush)
+            onDismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+            isCommitting = false
+        }
+    }
+
+    /// Returns a short label for the git status code
+    private func statusLabel(for status: String) -> String {
+        switch status {
+        case "M": return "M"  // Modified
+        case "A": return "A"  // Added
+        case "D": return "D"  // Deleted
+        case "R": return "R"  // Renamed
+        case "?": return "?"  // Untracked
+        default: return status
+        }
+    }
+
+    /// Returns a color for the git status code
+    private func statusColor(for status: String) -> Color {
+        switch status {
+        case "M": return .orange
+        case "A": return .green
+        case "D": return .red
+        case "R": return .blue
+        case "?": return .gray
+        default: return .primary
         }
     }
 }
