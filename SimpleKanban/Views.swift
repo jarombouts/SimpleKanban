@@ -27,6 +27,7 @@ extension String: @retroactive Identifiable {
 ///
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
+/// - h/j/k/l: Vim-style navigation (left/down/up/right)
 /// - Shift+Up/Down: Extend selection up/down (multi-select)
 /// - Space: Toggle card in/out of multi-selection
 /// - Home/End: Jump to first/last card in current column
@@ -696,6 +697,23 @@ struct BoardView: View {
             }
             if keyPress.key == .downArrow {
                 return navigationController.handleShiftArrowDown(currentSelection: currentSelection)
+            }
+        }
+
+        // Vim-style navigation (h/j/k/l) - only when no modifiers pressed
+        if keyPress.modifiers.isEmpty {
+            let keyChar: Character = keyPress.key.character
+            switch keyChar {
+            case "j", "J":
+                return navigationController.handleArrowDown(currentSelection: currentSelection)
+            case "k", "K":
+                return navigationController.handleArrowUp(currentSelection: currentSelection)
+            case "h", "H":
+                return navigationController.handleArrowLeft(currentSelection: currentSelection)
+            case "l", "L":
+                return navigationController.handleArrowRight(currentSelection: currentSelection)
+            default:
+                break
             }
         }
 
