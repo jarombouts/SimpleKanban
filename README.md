@@ -57,19 +57,50 @@ Cards are stored in subdirectories matching their column IDs, making it easy to 
 
 SimpleKanban is built for keyboard-driven workflows:
 
+**Navigation**
+
 | Key | Action |
 |-----|--------|
 | `↑` `↓` | Navigate cards in column |
 | `←` `→` | Navigate between columns |
+| `Home` / `End` | Jump to first / last card in column |
 | `Tab` / `Shift+Tab` | Next / previous column |
+| `Escape` | Clear selection |
+
+**Card Actions**
+
+| Key | Action |
+|-----|--------|
 | `Enter` | Edit selected card |
 | `Delete` | Delete card(s) (with confirmation) |
-| `Cmd+1/2/3` | Move card(s) to column 1/2/3 |
 | `Cmd+Backspace` | Archive card(s) |
-| `Escape` | Clear selection |
+| `Cmd+D` | Duplicate card(s) |
+| `Cmd+Shift+N` | New card in current column |
+
+**Moving Cards**
+
+| Key | Action |
+|-----|--------|
+| `Cmd+1/2/3...` | Move card to column 1/2/3... |
+| `Cmd+←` / `Cmd+→` | Move card to previous / next column |
+| `Cmd+↑` / `Cmd+↓` | Reorder card up / down in column |
+
+**Selection & Search**
+
+| Key | Action |
+|-----|--------|
+| `Cmd+A` | Select all cards in current column |
+| `Cmd+F` | Focus search field |
+
+**Window Management**
+
+| Key | Action |
+|-----|--------|
 | `Cmd+N` | New board |
 | `Cmd+O` | Open board |
 | `Cmd+W` | Close board |
+| `Cmd+Z` | Undo |
+| `Cmd+Shift+Z` | Redo |
 
 ### Multi-Select
 
