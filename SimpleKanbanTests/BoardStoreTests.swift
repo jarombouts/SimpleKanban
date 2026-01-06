@@ -556,4 +556,60 @@ struct BoardStoreTests {
         store.searchText = ""
         #expect(store.filteredCards(forColumn: "todo").count == 2)
     }
+
+    // MARK: - Remove Column Tests
+
+    @Test("Removes column from board")
+    func removesColumn() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        #expect(store.board.columns.count == 3)
+
+        try store.removeColumn("in-progress")
+
+        #expect(store.board.columns.count == 2)
+        #expect(!store.board.columns.contains { $0.id == "in-progress" })
+    }
+
+    @Test("Removes empty column directory on delete")
+    func removesEmptyColumnDirectory() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Verify the directory exists before removal
+        let columnDir: URL = tempDir.appendingPathComponent("cards/in-progress")
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+
+        try store.removeColumn("in-progress")
+
+        // Directory should be deleted since it was empty
+        #expect(!FileManager.default.fileExists(atPath: columnDir.path))
+    }
+
+    @Test("Keeps non-empty column directory on delete with warning")
+    func keepsNonEmptyColumnDirectory() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Add a card to in-progress column
+        try store.addCard(title: "Test Card", toColumn: "in-progress")
+
+        let columnDir: URL = tempDir.appendingPathComponent("cards/in-progress")
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+
+        // Remove the column (this should NOT delete the directory since it has a card)
+        try store.removeColumn("in-progress")
+
+        // Directory should still exist since it wasn't empty
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+        // Card file should still exist
+        let cardPath: URL = tempDir.appendingPathComponent("cards/in-progress/test-card.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
 }

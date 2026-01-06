@@ -133,6 +133,55 @@ struct BoardView: View {
         selectionAnchor = nil
     }
 
+    /// Finds the best card to select after deleting/archiving the given cards.
+    ///
+    /// Strategy: Find the first non-deleted card after the lowest deleted card
+    /// in the same column. If none exists, try the card before. If the column
+    /// becomes empty, returns nil (clear selection).
+    ///
+    /// This provides intuitive UX: after bulk delete, selection moves to a
+    /// nearby card rather than disappearing completely.
+    ///
+    /// - Parameter deletingTitles: Set of card titles being deleted
+    /// - Returns: Title of card to select next, or nil to clear selection
+    private func findNextSelection(afterDeleting deletingTitles: Set<String>) -> String? {
+        // Find all cards being deleted and group by column
+        let deletingCards: [Card] = store.cards(withTitles: deletingTitles)
+        guard !deletingCards.isEmpty else { return nil }
+
+        // Use the first deleted card's column as the target column for selection.
+        // (For multi-column bulk delete, this is arbitrary but reasonable.)
+        let targetColumn: String = deletingCards[0].column
+        let columnCards: [Card] = store.cards(forColumn: targetColumn)
+
+        // Find the indices of deleted cards in this column
+        let deletingTitlesInColumn: Set<String> = Set(deletingCards.filter { $0.column == targetColumn }.map { $0.title })
+        let deletingIndices: [Int] = columnCards.enumerated()
+            .filter { deletingTitlesInColumn.contains($0.element.title) }
+            .map { $0.offset }
+
+        guard let lowestDeletedIndex: Int = deletingIndices.min() else { return nil }
+
+        // Find the first card after the lowest deleted index that isn't being deleted
+        for index in lowestDeletedIndex..<columnCards.count {
+            let card: Card = columnCards[index]
+            if !deletingTitles.contains(card.title) {
+                return card.title
+            }
+        }
+
+        // No cards after - try cards before the lowest deleted index
+        for index in stride(from: lowestDeletedIndex - 1, through: 0, by: -1) {
+            let card: Card = columnCards[index]
+            if !deletingTitles.contains(card.title) {
+                return card.title
+            }
+        }
+
+        // Column will be empty after delete
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
@@ -330,9 +379,18 @@ struct BoardView: View {
                 ArchiveToolbarButton(
                     isEnabled: !selectedCardTitles.isEmpty,
                     onArchive: {
+                        // Calculate next selection BEFORE archiving
+                        let nextSelection: String? = findNextSelection(afterDeleting: selectedCardTitles)
+
                         let cards: [Card] = store.cards(withTitles: selectedCardTitles)
                         try? store.archiveCards(cards)
-                        clearSelection()
+
+                        // Update selection to nearby card
+                        if let next = nextSelection {
+                            selectSingle(next)
+                        } else {
+                            clearSelection()
+                        }
                     },
                     onDrop: { titles in
                         let cards: [Card] = store.cards(withTitles: titles)
@@ -425,9 +483,18 @@ struct BoardView: View {
                 cardsToDelete.removeAll()
             }
             Button("Delete\(cardsToDelete.count > 1 ? " \(cardsToDelete.count) Cards" : "")", role: .destructive) {
+                // Calculate next selection BEFORE deleting, while cards still exist
+                let nextSelection: String? = findNextSelection(afterDeleting: cardsToDelete)
+
                 let cards: [Card] = store.cards(withTitles: cardsToDelete)
                 try? store.deleteCards(cards)
-                selectedCardTitles.subtract(cardsToDelete)
+
+                // Update selection to nearby card instead of just clearing
+                if let next = nextSelection {
+                    selectSingle(next)
+                } else {
+                    clearSelection()
+                }
                 cardsToDelete.removeAll()
             }
         } message: {
@@ -564,8 +631,17 @@ struct BoardView: View {
 
         case .archiveCard(let cardTitle):
             if let card = store.card(withTitle: cardTitle) {
+                // Calculate next selection BEFORE archiving
+                let nextSelection: String? = findNextSelection(afterDeleting: [cardTitle])
+
                 try? store.archiveCard(card)
-                selectedCardTitles.remove(cardTitle)
+
+                // Update selection to nearby card
+                if let next = nextSelection {
+                    selectSingle(next)
+                } else {
+                    clearSelection()
+                }
             }
             return true
 
@@ -583,9 +659,18 @@ struct BoardView: View {
             return true
 
         case .bulkArchive(let cardTitles):
+            // Calculate next selection BEFORE archiving
+            let nextSelection: String? = findNextSelection(afterDeleting: cardTitles)
+
             let cards: [Card] = store.cards(withTitles: cardTitles)
             try? store.archiveCards(cards)
-            clearSelection()
+
+            // Update selection to nearby card
+            if let next = nextSelection {
+                selectSingle(next)
+            } else {
+                clearSelection()
+            }
             return true
 
         case .bulkMove(let cardTitles, let columnIndex):
