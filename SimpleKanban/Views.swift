@@ -960,8 +960,10 @@ struct CardDetailView: View {
                             onOpenSettings()
                         } label: {
                             Image(systemName: "plus.circle")
-                                .font(.system(size: 14))
+                                .font(.system(size: 12))
                                 .foregroundStyle(.secondary)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 4)
                         }
                         .buttonStyle(.plain)
                         .help("Manage labels in settings")
@@ -1107,8 +1109,10 @@ struct NewCardView: View {
                                 onOpenSettings()
                             } label: {
                                 Image(systemName: "plus.circle")
-                                    .font(.system(size: 14))
+                                    .font(.system(size: 12))
                                     .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 4)
+                                    .padding(.vertical, 4)
                             }
                             .buttonStyle(.plain)
                             .help("Manage labels in settings")
