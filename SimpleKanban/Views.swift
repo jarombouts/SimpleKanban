@@ -981,6 +981,365 @@ struct LabelChip: View {
     }
 }
 
+// MARK: - MarkdownTextEditor
+
+/// A text editor with markdown syntax highlighting.
+///
+/// Wraps NSTextView to provide attributed text editing with real-time
+/// syntax highlighting for common markdown elements:
+/// - Headers (# to ######)
+/// - Bold (**text** or __text__)
+/// - Italic (*text* or _text_)
+/// - Code (inline `code` and fenced ```code blocks```)
+/// - Lists (- or * or numbered)
+/// - Blockquotes (> text)
+/// - Links ([text](url))
+///
+/// The text is stored as plain markdown - only the visual display is styled.
+/// This maintains compatibility with the file format.
+struct MarkdownTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    /// Coordinator handles NSTextViewDelegate callbacks to sync text changes
+    /// back to the SwiftUI binding.
+    ///
+    /// Marked @MainActor because all NSTextView operations must happen on the main thread,
+    /// and Swift 6 strict concurrency requires this for accessing textStorage and other UI properties.
+    @MainActor
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: MarkdownTextEditor
+        /// Flag to prevent recursive updates when we're applying highlighting
+        var isUpdating: Bool = false
+
+        init(_ parent: MarkdownTextEditor) {
+            self.parent = parent
+        }
+
+        /// Called whenever the text content changes.
+        /// Updates the binding and re-applies syntax highlighting.
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            guard !isUpdating else { return }
+
+            // Update binding with plain text
+            let newText: String = textView.string
+            if parent.text != newText {
+                parent.text = newText
+            }
+
+            // Re-apply highlighting
+            applyHighlighting(to: textView)
+        }
+
+        /// Applies markdown syntax highlighting to the text view.
+        /// Preserves the cursor position during updates.
+        func applyHighlighting(to textView: NSTextView) {
+            guard let textStorage = textView.textStorage else { return }
+
+            isUpdating = true
+            defer { isUpdating = false }
+
+            // Save selection
+            let selectedRanges: [NSValue] = textView.selectedRanges as [NSValue]
+
+            // Get the full text range
+            let fullRange: NSRange = NSRange(location: 0, length: textStorage.length)
+
+            // Start with base attributes
+            let baseFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            let baseColor: NSColor = NSColor.textColor
+
+            textStorage.beginEditing()
+
+            // Reset to base style
+            textStorage.setAttributes([
+                .font: baseFont,
+                .foregroundColor: baseColor
+            ], range: fullRange)
+
+            let text: String = textStorage.string
+
+            // Apply markdown patterns in order (later patterns can override earlier)
+            applyCodeBlockHighlighting(to: textStorage, text: text)
+            applyInlineCodeHighlighting(to: textStorage, text: text)
+            applyHeaderHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyBoldHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyItalicHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyListHighlighting(to: textStorage, text: text)
+            applyBlockquoteHighlighting(to: textStorage, text: text)
+            applyLinkHighlighting(to: textStorage, text: text)
+
+            textStorage.endEditing()
+
+            // Restore selection
+            textView.selectedRanges = selectedRanges
+        }
+
+        // MARK: - Highlighting Helpers
+
+        /// Highlights fenced code blocks (```...```)
+        private func applyCodeBlockHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match fenced code blocks: ``` followed by optional language, content, and closing ```
+            // The pattern: ```[optional lang]\n..content..\n```
+            let pattern: String = "```[a-zA-Z]*\\n[\\s\\S]*?```"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.systemOrange,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.1, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights inline code (`code`)
+        private func applyInlineCodeHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match backtick-wrapped text (but not inside code blocks, handled by order)
+            let pattern: String = "`[^`\\n]+`"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.systemOrange,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.05, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights headers (# Header)
+        private func applyHeaderHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match lines starting with 1-6 # characters followed by space and text
+            // H1 is largest, H6 is smallest
+            let headerConfigs: [(pattern: String, size: CGFloat, weight: NSFont.Weight)] = [
+                ("^#{6}\\s+.+$", 13, .semibold),  // H6
+                ("^#{5}\\s+.+$", 14, .semibold),  // H5
+                ("^#{4}\\s+.+$", 15, .semibold),  // H4
+                ("^#{3}\\s+.+$", 16, .bold),      // H3
+                ("^#{2}\\s+.+$", 18, .bold),      // H2
+                ("^#{1}\\s+.+$", 20, .bold),      // H1
+            ]
+
+            for config in headerConfigs {
+                applyPattern(
+                    config.pattern,
+                    to: textStorage,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(ofSize: config.size, weight: config.weight),
+                        .foregroundColor: NSColor.systemBlue
+                    ]
+                )
+            }
+        }
+
+        /// Highlights bold text (**text** or __text__)
+        private func applyBoldHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match **text** or __text__ (non-greedy, no newlines)
+            let patterns: [String] = [
+                "\\*\\*[^*\\n]+\\*\\*",
+                "__[^_\\n]+__"
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+                    ]
+                )
+            }
+        }
+
+        /// Highlights italic text (*text* or _text_)
+        private func applyItalicHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match *text* or _text_ (single delimiter, not bold)
+            // Negative lookbehind/ahead not fully supported, so we use simple patterns
+            // and rely on bold being applied after (overriding)
+            let patterns: [String] = [
+                "(?<!\\*)\\*[^*\\n]+\\*(?!\\*)",
+                "(?<!_)_[^_\\n]+_(?!_)"
+            ]
+
+            // Create italic font using the font descriptor
+            let italicFont: NSFont = {
+                let descriptor: NSFontDescriptor = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular).fontDescriptor
+                let italicDescriptor: NSFontDescriptor = descriptor.withSymbolicTraits(.italic)
+                return NSFont(descriptor: italicDescriptor, size: 13) ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            }()
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    attributes: [
+                        .font: italicFont,
+                        .foregroundColor: NSColor.textColor
+                    ]
+                )
+            }
+        }
+
+        /// Highlights list markers (-, *, numbered)
+        private func applyListHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match list markers at start of line
+            let patterns: [String] = [
+                "^\\s*[-*+]\\s",           // Unordered: - item, * item, + item
+                "^\\s*\\d+\\.\\s"          // Ordered: 1. item
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .foregroundColor: NSColor.systemPurple
+                    ]
+                )
+            }
+        }
+
+        /// Highlights blockquotes (> text)
+        private func applyBlockquoteHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match lines starting with >
+            let pattern: String = "^>\\s*.+$"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                options: [.anchorsMatchLines],
+                attributes: [
+                    .foregroundColor: NSColor.systemGray,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.03, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights links [text](url)
+        private func applyLinkHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match markdown links: [text](url)
+            let pattern: String = "\\[([^\\]]+)\\]\\(([^)]+)\\)"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .foregroundColor: NSColor.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ]
+            )
+        }
+
+        /// Helper to apply regex-based highlighting.
+        private func applyPattern(
+            _ pattern: String,
+            to textStorage: NSTextStorage,
+            text: String,
+            options: NSRegularExpression.Options = [],
+            attributes: [NSAttributedString.Key: Any]
+        ) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+                return
+            }
+
+            let nsText: NSString = text as NSString
+            let fullRange: NSRange = NSRange(location: 0, length: nsText.length)
+
+            regex.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                textStorage.addAttributes(attributes, range: matchRange)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        // Create the text view
+        let textView: NSTextView = NSTextView()
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+
+        // Use monospace font for consistency with markdown editing
+        textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textColor = NSColor.textColor
+        textView.backgroundColor = NSColor.textBackgroundColor
+
+        // Configure text container for proper layout
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+
+        // Set delegate
+        textView.delegate = context.coordinator
+
+        // Set initial text and apply highlighting
+        textView.string = text
+        context.coordinator.applyHighlighting(to: textView)
+
+        // Wrap in scroll view for scrolling support
+        let scrollView: NSScrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = textView
+
+        // Make text view fill scroll view width
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.autoresizingMask = [.width]
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+
+        // Only update if text actually changed (avoid cursor jumping)
+        if textView.string != text {
+            // Save selection
+            let selectedRanges: [NSValue] = textView.selectedRanges
+
+            // Update text
+            textView.string = text
+
+            // Apply highlighting
+            context.coordinator.applyHighlighting(to: textView)
+
+            // Restore selection if valid
+            let maxLocation: Int = textView.string.count
+            let validRanges: [NSValue] = selectedRanges.compactMap { value in
+                let range: NSRange = value.rangeValue
+                if range.location <= maxLocation {
+                    let newLength: Int = min(range.length, maxLocation - range.location)
+                    return NSValue(range: NSRange(location: range.location, length: newLength))
+                }
+                return nil
+            }
+            if !validRanges.isEmpty {
+                textView.selectedRanges = validRanges
+            }
+        }
+    }
+}
+
 // MARK: - CardDetailView
 
 /// Full card editor shown as a sheet.
@@ -1076,8 +1435,7 @@ struct CardDetailView: View {
                 }
 
                 Section("Description") {
-                    TextEditor(text: $editedCard.body)
-                        .font(.body)
+                    MarkdownTextEditor(text: $editedCard.body)
                         .frame(minHeight: 200)
                 }
             }
@@ -1225,8 +1583,7 @@ struct NewCardView: View {
                     }
 
                     Section("Description (optional)") {
-                        TextEditor(text: $cardBody)
-                            .font(.body)
+                        MarkdownTextEditor(text: $cardBody)
                             .frame(minHeight: 200)
                     }
                 }
