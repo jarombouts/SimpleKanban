@@ -30,6 +30,7 @@ extension String: @retroactive Identifiable {
 /// - h/j/k/l: Vim-style navigation (left/down/up/right)
 /// - 0/G/$: Vim-style first/last card (like Home/End)
 /// - x: Vim-style delete card (with confirmation)
+/// - o/e: Vim-style open/edit card (like Enter)
 /// - Shift+Up/Down: Extend selection up/down (multi-select)
 /// - Space: Toggle card in/out of multi-selection
 /// - Home/End: Jump to first/last card in current column
@@ -726,6 +727,9 @@ struct BoardView: View {
                     return .bulkDelete(cardTitles: selectedCardTitles)
                 }
                 return navigationController.handleDelete(currentSelection: currentSelection)
+            case "o", "O", "e", "E":
+                // Vim: o (open) or e (edit) opens card for editing (like Enter)
+                return navigationController.handleEnter(currentSelection: currentSelection)
             default:
                 break
             }

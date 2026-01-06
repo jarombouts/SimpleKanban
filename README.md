@@ -76,6 +76,7 @@ SimpleKanban is built for keyboard-driven workflows:
 | Key | Action |
 |-----|--------|
 | `Enter` | Edit selected card |
+| `o` / `e` | Edit selected card (vim-style) |
 | `x` | Delete card(s) (vim-style, with confirmation) |
 | `Delete` | Delete card(s) (with confirmation) |
 | `Cmd+Backspace` | Archive card(s) |
