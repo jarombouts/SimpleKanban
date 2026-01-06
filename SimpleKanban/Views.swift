@@ -27,6 +27,7 @@ extension String: @retroactive Identifiable {
 ///
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
+/// - Home/End: Jump to first/last card in current column
 /// - Enter: Open selected card for editing
 /// - Delete/Backspace: Delete selected card (with confirmation)
 /// - Cmd+Backspace: Archive selected card
@@ -678,6 +679,10 @@ struct BoardView: View {
         case .tab:
             let shiftPressed: Bool = keyPress.modifiers.contains(.shift)
             return navigationController.handleTab(currentSelection: currentSelection, shiftPressed: shiftPressed)
+        case .home:
+            return navigationController.handleHome(currentSelection: currentSelection)
+        case .end:
+            return navigationController.handleEnd(currentSelection: currentSelection)
         default:
             return .none
         }

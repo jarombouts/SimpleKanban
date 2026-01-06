@@ -175,6 +175,76 @@ class KeyboardNavigationController {
         return navigateHorizontally(currentSelection: currentSelection, direction: direction)
     }
 
+    /// Handles Home key press.
+    ///
+    /// Jumps to the first card in the current column.
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleHome(currentSelection: String?) -> NavigationResult {
+        // Find which column to navigate in
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        guard let firstCard = columnCards.first else {
+            return .none
+        }
+
+        // Don't change selection if already at first card
+        if firstCard.title == currentSelection {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: firstCard.title)
+    }
+
+    /// Handles End key press.
+    ///
+    /// Jumps to the last card in the current column.
+    /// If no card is selected, selects the last card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleEnd(currentSelection: String?) -> NavigationResult {
+        // Find which column to navigate in
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        guard let lastCard = columnCards.last else {
+            return .none
+        }
+
+        // Don't change selection if already at last card
+        if lastCard.title == currentSelection {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: lastCard.title)
+    }
+
     // MARK: - Action Keys
 
     /// Handles Enter/Return key press.

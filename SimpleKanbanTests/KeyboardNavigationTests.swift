@@ -882,6 +882,193 @@ class CmdArrowReorderTests: XCTestCase {
     }
 }
 
+// MARK: - Home/End Navigation Tests
+
+class HomeEndNavigationTests: XCTestCase {
+
+    /// Helper to create a mock layout provider
+    func makeStandardLayout() -> MockBoardLayoutProvider {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "in-progress", name: "In Progress"),
+            Column(id: "done", name: "Done")
+        ]
+        return provider
+    }
+
+    /// Helper to create a card
+    func makeCard(title: String, column: String, position: String = "n") -> Card {
+        return Card(
+            title: title,
+            column: column,
+            position: position,
+            created: Date(),
+            modified: Date(),
+            labels: [],
+            body: ""
+        )
+    }
+
+    /// Test: Home jumps to first card in column
+    func testHomeJumpsToFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleHome(currentSelection: "Card C")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Home returns none when already at first card
+    func testHomeReturnsNoneWhenAtFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleHome(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Home with no selection selects first card in first column
+    func testHomeWithNoSelectionSelectsFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleHome(currentSelection: nil)
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Home with empty board returns none
+    func testHomeWithEmptyBoardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleHome(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: End jumps to last card in column
+    func testEndJumpsToLastCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleEnd(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card C"))
+    }
+
+    /// Test: End returns none when already at last card
+    func testEndReturnsNoneWhenAtLastCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleEnd(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: End with no selection selects last card in first column
+    func testEndWithNoSelectionSelectsLastCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleEnd(currentSelection: nil)
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card B"))
+    }
+
+    /// Test: End with empty board returns none
+    func testEndWithEmptyBoardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleEnd(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Home stays in current column
+    func testHomeStaysInCurrentColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Todo A", column: "todo", position: "a"),
+            makeCard(title: "Todo B", column: "todo", position: "z")
+        ], forColumn: "todo")
+        provider.setCards([
+            makeCard(title: "Done A", column: "done", position: "a"),
+            makeCard(title: "Done B", column: "done", position: "z")
+        ], forColumn: "done")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleHome(currentSelection: "Done B")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Done A"))
+    }
+
+    /// Test: End stays in current column
+    func testEndStaysInCurrentColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Todo A", column: "todo", position: "a"),
+            makeCard(title: "Todo B", column: "todo", position: "z")
+        ], forColumn: "todo")
+        provider.setCards([
+            makeCard(title: "Done A", column: "done", position: "a"),
+            makeCard(title: "Done B", column: "done", position: "z")
+        ], forColumn: "done")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleEnd(currentSelection: "Done A")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Done B"))
+    }
+
+    /// Test: Home/End with single card returns none
+    func testHomeEndWithSingleCardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Only Card", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        let homeResult: NavigationResult = controller.handleHome(currentSelection: "Only Card")
+        let endResult: NavigationResult = controller.handleEnd(currentSelection: "Only Card")
+
+        XCTAssertEqual(homeResult, .none)
+        XCTAssertEqual(endResult, .none)
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {
