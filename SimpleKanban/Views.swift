@@ -243,6 +243,9 @@ struct BoardView: View {
                                 onArchiveCard: { card in
                                     try? store.archiveCard(card)
                                     selectedCardTitles.remove(card.title)
+                                },
+                                onToggleCollapse: {
+                                    try? store.toggleColumnCollapsed(column.id)
                                 }
                             )
                         }
@@ -765,6 +768,8 @@ struct ColumnView: View {
     let isFiltering: Bool
     let labels: [CardLabel]
     let columnWidth: CGFloat
+    /// Width to use when column is collapsed (narrow strip)
+    let collapsedWidth: CGFloat = 48
 
     /// Titles of currently selected cards (for multi-select highlight)
     let selectedCardTitles: Set<String>
@@ -780,6 +785,8 @@ struct ColumnView: View {
     /// Callback for move with card title (not full Card) since we only have title from drag
     let onMoveCard: (String, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
+    /// Callback to toggle the collapsed state
+    let onToggleCollapse: () -> Void
 
     /// Whether the column itself is targeted for a drop
     @State private var isColumnTargeted: Bool = false
@@ -795,9 +802,91 @@ struct ColumnView: View {
     private let dropGapHeight: CGFloat = 60
 
     var body: some View {
+        // Show collapsed or expanded view based on column state
+        if column.collapsed {
+            collapsedBody
+        } else {
+            expandedBody
+        }
+    }
+
+    /// Collapsed column view - just a narrow strip with vertical name and card count.
+    /// Click anywhere to expand.
+    @ViewBuilder
+    private var collapsedBody: some View {
+        VStack(spacing: 8) {
+            // Expand button at top
+            Button(action: onToggleCollapse) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Expand column")
+            .padding(.top, 12)
+
+            // Vertical column name (rotated)
+            Text(column.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .rotationEffect(.degrees(-90))
+                .fixedSize()
+                .frame(width: collapsedWidth - 16)
+                .padding(.vertical, 4)
+
+            Spacer()
+
+            // Card count badge at bottom
+            Text("\(allCardsCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.2))
+                .clipShape(Capsule())
+                .padding(.bottom, 12)
+        }
+        .frame(width: collapsedWidth)
+        .frame(maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggleCollapse()
+        }
+        // Allow drops on collapsed columns too - cards go to end
+        .onDrop(of: [.text], delegate: CardDropDelegate(
+            columnID: column.id,
+            cards: cards,
+            cardFrames: $cardFrames,
+            dropTargetIndex: $dropTargetIndex,
+            isColumnTargeted: $isColumnTargeted,
+            draggingCardTitle: $draggingCardTitle,
+            onMoveCard: onMoveCard
+        ))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isColumnTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+    }
+
+    /// Expanded column view - full width with card list.
+    @ViewBuilder
+    private var expandedBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Column header with add button
+            // Column header with collapse button and add button
             HStack(spacing: 8) {
+                // Collapse button
+                Button(action: onToggleCollapse) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse column")
+
                 Text(column.name)
                     .font(.headline)
                     .fontWeight(.semibold)

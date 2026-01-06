@@ -480,6 +480,33 @@ public final class BoardStore: @unchecked Sendable {
         try BoardWriter.save(board, in: url)
     }
 
+    /// Toggles a column's collapsed state.
+    ///
+    /// When collapsed, the column shows only the header and card count.
+    /// This is useful for saving horizontal space on boards with many columns.
+    ///
+    /// - Parameter columnID: The column ID to toggle
+    public func toggleColumnCollapsed(_ columnID: String) throws {
+        guard let index: Int = board.columns.firstIndex(where: { $0.id == columnID }) else {
+            return
+        }
+        board.columns[index].collapsed.toggle()
+        try BoardWriter.save(board, in: url)
+    }
+
+    /// Sets a column's collapsed state directly.
+    ///
+    /// - Parameters:
+    ///   - columnID: The column ID to update
+    ///   - collapsed: Whether the column should be collapsed
+    public func setColumnCollapsed(_ columnID: String, collapsed: Bool) throws {
+        guard let index: Int = board.columns.firstIndex(where: { $0.id == columnID }) else {
+            return
+        }
+        board.columns[index].collapsed = collapsed
+        try BoardWriter.save(board, in: url)
+    }
+
     /// Reorders columns to match the given order.
     ///
     /// - Parameter columnIDs: The column IDs in their new order

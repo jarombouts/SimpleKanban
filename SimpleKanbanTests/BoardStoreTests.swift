@@ -612,4 +612,66 @@ struct BoardStoreTests {
         let cardPath: URL = tempDir.appendingPathComponent("cards/in-progress/test-card.md")
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
     }
+
+    @Test("Toggles column collapsed state")
+    func togglesColumnCollapsed() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Initially all columns should be expanded
+        #expect(store.board.columns[0].collapsed == false)
+        #expect(store.board.columns[1].collapsed == false)
+
+        // Toggle todo column to collapsed
+        try store.toggleColumnCollapsed("todo")
+        #expect(store.board.columns[0].collapsed == true)
+        #expect(store.board.columns[1].collapsed == false)
+
+        // Toggle again to expand
+        try store.toggleColumnCollapsed("todo")
+        #expect(store.board.columns[0].collapsed == false)
+
+        // Verify persistence by reloading board
+        try store.reloadBoard()
+        #expect(store.board.columns[0].collapsed == false)
+    }
+
+    @Test("Sets column collapsed state directly")
+    func setsColumnCollapsed() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Set collapsed state directly
+        try store.setColumnCollapsed("in-progress", collapsed: true)
+        #expect(store.board.columns[1].collapsed == true)
+
+        try store.setColumnCollapsed("in-progress", collapsed: false)
+        #expect(store.board.columns[1].collapsed == false)
+    }
+
+    @Test("Column collapsed state persists to disk")
+    func collapsedStatePersistsToDisk() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Collapse a column
+        try store.toggleColumnCollapsed("done")
+        #expect(store.board.columns[2].collapsed == true)
+
+        // Read the board.md file and verify it contains collapsed: true
+        let boardPath: URL = tempDir.appendingPathComponent("board.md")
+        let boardContent: String = try String(contentsOf: boardPath, encoding: .utf8)
+        #expect(boardContent.contains("collapsed: true"))
+
+        // Reload from a new store instance to verify persistence
+        let store2: BoardStore = try BoardStore(url: tempDir)
+        #expect(store2.board.columns[2].collapsed == true)
+        #expect(store2.board.columns[0].collapsed == false)
+    }
 }
