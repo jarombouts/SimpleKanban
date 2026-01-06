@@ -249,7 +249,9 @@ public enum CardWriter {
     /// - Parameters:
     ///   - card: The card to archive
     ///   - boardURL: The board directory URL
-    public static func archive(_ card: Card, in boardURL: URL) throws {
+    /// - Returns: The URL where the card was archived (needed for undo)
+    @discardableResult
+    public static func archive(_ card: Card, in boardURL: URL) throws -> URL {
         let fileManager: FileManager = FileManager.default
         let slug: String = slugify(card.title)
 
@@ -277,6 +279,34 @@ public enum CardWriter {
 
         // Move file to archive
         try fileManager.moveItem(at: sourcePath, to: archivePath)
+
+        return archivePath
+    }
+
+    /// Unarchives a card by moving it from the archive/ directory back to cards/.
+    ///
+    /// Used for undo support when undoing an archive operation.
+    ///
+    /// - Parameters:
+    ///   - archivePath: The URL of the archived card file
+    ///   - card: The original card (to determine destination column)
+    ///   - boardURL: The board directory URL
+    public static func unarchive(from archivePath: URL, card: Card, in boardURL: URL) throws {
+        let fileManager: FileManager = FileManager.default
+        let slug: String = slugify(card.title)
+
+        // Destination: cards/{column}/{slug}.md
+        let columnDir: URL = boardURL.appendingPathComponent("cards/\(card.column)")
+
+        // Ensure column directory exists
+        if !fileManager.fileExists(atPath: columnDir.path) {
+            try fileManager.createDirectory(at: columnDir, withIntermediateDirectories: true)
+        }
+
+        let destPath: URL = columnDir.appendingPathComponent("\(slug).md")
+
+        // Move file back from archive
+        try fileManager.moveItem(at: archivePath, to: destPath)
     }
 }
 

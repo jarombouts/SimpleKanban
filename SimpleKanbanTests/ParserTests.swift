@@ -436,6 +436,72 @@ struct BoardParserTests {
         #expect(reparsed.labels[0].color == "#ff0000")
         #expect(reparsed.cardTemplate.contains("What needs to be done."))
     }
+
+    @Test("Column defaults to expanded (not collapsed)")
+    func columnDefaultsExpanded() {
+        let column: Column = Column(id: "test", name: "Test")
+        #expect(column.collapsed == false)
+    }
+
+    @Test("Parses board with collapsed column")
+    func parseBoardWithCollapsedColumn() throws {
+        let markdown: String = """
+            ---
+            title: Test Board
+            columns:
+              - id: todo
+                name: To Do
+              - id: done
+                name: Done
+                collapsed: true
+            ---
+            """
+
+        let board: Board = try Board.parse(from: markdown)
+
+        #expect(board.columns.count == 2)
+        #expect(board.columns[0].collapsed == false)
+        #expect(board.columns[1].collapsed == true)
+    }
+
+    @Test("Serializes collapsed column state")
+    func serializeCollapsedColumn() {
+        let board: Board = Board(
+            title: "Test Board",
+            columns: [
+                Column(id: "todo", name: "To Do", collapsed: false),
+                Column(id: "done", name: "Done", collapsed: true)
+            ]
+        )
+
+        let markdown: String = board.toMarkdown()
+
+        // collapsed: true should appear for 'done' but not for 'todo'
+        #expect(markdown.contains("id: done"))
+        #expect(markdown.contains("collapsed: true"))
+        // The word 'collapsed' should only appear once (for the true case)
+        let collapsedCount: Int = markdown.components(separatedBy: "collapsed").count - 1
+        #expect(collapsedCount == 1)
+    }
+
+    @Test("Round-trip preserves collapsed state")
+    func collapsedRoundTrip() throws {
+        let board: Board = Board(
+            title: "Test Board",
+            columns: [
+                Column(id: "backlog", name: "Backlog", collapsed: false),
+                Column(id: "doing", name: "Doing", collapsed: true),
+                Column(id: "done", name: "Done", collapsed: false)
+            ]
+        )
+
+        let serialized: String = board.toMarkdown()
+        let reparsed: Board = try Board.parse(from: serialized)
+
+        #expect(reparsed.columns[0].collapsed == false)
+        #expect(reparsed.columns[1].collapsed == true)
+        #expect(reparsed.columns[2].collapsed == false)
+    }
 }
 
 // MARK: - Lexicographic Position Tests

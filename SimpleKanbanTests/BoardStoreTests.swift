@@ -362,4 +362,976 @@ struct BoardStoreTests {
         #expect(doneCards[0].title == "First")
         #expect(doneCards[1].title == "Third")
     }
+
+    // MARK: - Search and Filter Tests
+
+    @Test("Filters cards by search text in title")
+    func filtersBySearchTextInTitle() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix login bug", toColumn: "todo")
+        try store.addCard(title: "Add new feature", toColumn: "todo")
+        try store.addCard(title: "Login page design", toColumn: "in-progress")
+
+        // Search for "login"
+        store.searchText = "login"
+
+        let todoFiltered: [Card] = store.filteredCards(forColumn: "todo")
+        let inProgressFiltered: [Card] = store.filteredCards(forColumn: "in-progress")
+
+        #expect(todoFiltered.count == 1)
+        #expect(todoFiltered[0].title == "Fix login bug")
+        #expect(inProgressFiltered.count == 1)
+        #expect(inProgressFiltered[0].title == "Login page design")
+
+        // Clear filter
+        store.clearFilters()
+        #expect(store.filteredCards(forColumn: "todo").count == 2)
+    }
+
+    @Test("Filters cards by search text in body")
+    func filtersBySearchTextInBody() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Task A", toColumn: "todo", body: "This is about authentication")
+        try store.addCard(title: "Task B", toColumn: "todo", body: "This is about styling")
+
+        store.searchText = "authentication"
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Task A")
+    }
+
+    @Test("Search is case insensitive")
+    func searchIsCaseInsensitive() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix BIG Bug", toColumn: "todo")
+        try store.addCard(title: "small task", toColumn: "todo")
+
+        store.searchText = "big"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+
+        store.searchText = "BIG"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+
+        store.searchText = "BiG"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+    }
+
+    @Test("Filters cards by single label")
+    func filtersBySingleLabel() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Bug Card", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Feature Card", toColumn: "todo", labels: [])
+        try store.addCard(title: "Another Bug", toColumn: "in-progress", labels: ["bug"])
+
+        store.filterLabels = ["bug"]
+
+        let todoFiltered: [Card] = store.filteredCards(forColumn: "todo")
+        let inProgressFiltered: [Card] = store.filteredCards(forColumn: "in-progress")
+
+        #expect(todoFiltered.count == 1)
+        #expect(todoFiltered[0].title == "Bug Card")
+        #expect(inProgressFiltered.count == 1)
+        #expect(inProgressFiltered[0].title == "Another Bug")
+    }
+
+    @Test("Filters cards by multiple labels (AND logic)")
+    func filtersByMultipleLabels() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // Add feature label to board
+        let boardMarkdown: String = """
+            ---
+            title: Test Board
+            columns:
+              - id: todo
+                name: To Do
+              - id: in-progress
+                name: In Progress
+              - id: done
+                name: Done
+            labels:
+              - id: bug
+                name: Bug
+                color: "#e74c3c"
+              - id: urgent
+                name: Urgent
+                color: "#e67e22"
+            ---
+            """
+        try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Urgent Bug", toColumn: "todo", labels: ["bug", "urgent"])
+        try store.addCard(title: "Normal Bug", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Urgent Task", toColumn: "todo", labels: ["urgent"])
+
+        // Filter by both labels - only cards with BOTH should match
+        store.filterLabels = ["bug", "urgent"]
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Urgent Bug")
+    }
+
+    @Test("Combines search text and label filter")
+    func combinesSearchAndLabelFilter() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix login bug", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Login feature", toColumn: "todo", labels: [])
+        try store.addCard(title: "Fix button bug", toColumn: "todo", labels: ["bug"])
+
+        // Search for "login" AND filter by "bug" label
+        store.searchText = "login"
+        store.filterLabels = ["bug"]
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Fix login bug")
+    }
+
+    @Test("isFiltering returns correct state")
+    func isFilteringReturnsCorrectState() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        #expect(!store.isFiltering)
+
+        store.searchText = "test"
+        #expect(store.isFiltering)
+
+        store.searchText = ""
+        #expect(!store.isFiltering)
+
+        store.filterLabels = ["bug"]
+        #expect(store.isFiltering)
+
+        store.clearFilters()
+        #expect(!store.isFiltering)
+    }
+
+    @Test("filteredCards returns total matching cards")
+    func filteredCardsReturnsTotal() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Bug A", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Bug B", toColumn: "in-progress", labels: ["bug"])
+        try store.addCard(title: "Feature", toColumn: "done", labels: [])
+
+        store.filterLabels = ["bug"]
+
+        #expect(store.filteredCards.count == 2)
+        #expect(store.cards.count == 3)
+    }
+
+    @Test("Empty search text shows all cards")
+    func emptySearchShowsAll() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "todo")
+
+        store.searchText = ""
+        #expect(store.filteredCards(forColumn: "todo").count == 2)
+    }
+
+    // MARK: - Remove Column Tests
+
+    @Test("Removes column from board")
+    func removesColumn() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        #expect(store.board.columns.count == 3)
+
+        try store.removeColumn("in-progress")
+
+        #expect(store.board.columns.count == 2)
+        #expect(!store.board.columns.contains { $0.id == "in-progress" })
+    }
+
+    @Test("Removes empty column directory on delete")
+    func removesEmptyColumnDirectory() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Verify the directory exists before removal
+        let columnDir: URL = tempDir.appendingPathComponent("cards/in-progress")
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+
+        try store.removeColumn("in-progress")
+
+        // Directory should be deleted since it was empty
+        #expect(!FileManager.default.fileExists(atPath: columnDir.path))
+    }
+
+    @Test("Keeps non-empty column directory on delete with warning")
+    func keepsNonEmptyColumnDirectory() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Add a card to in-progress column
+        try store.addCard(title: "Test Card", toColumn: "in-progress")
+
+        let columnDir: URL = tempDir.appendingPathComponent("cards/in-progress")
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+
+        // Remove the column (this should NOT delete the directory since it has a card)
+        try store.removeColumn("in-progress")
+
+        // Directory should still exist since it wasn't empty
+        #expect(FileManager.default.fileExists(atPath: columnDir.path))
+        // Card file should still exist
+        let cardPath: URL = tempDir.appendingPathComponent("cards/in-progress/test-card.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Toggles column collapsed state")
+    func togglesColumnCollapsed() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Initially all columns should be expanded
+        #expect(store.board.columns[0].collapsed == false)
+        #expect(store.board.columns[1].collapsed == false)
+
+        // Toggle todo column to collapsed
+        try store.toggleColumnCollapsed("todo")
+        #expect(store.board.columns[0].collapsed == true)
+        #expect(store.board.columns[1].collapsed == false)
+
+        // Toggle again to expand
+        try store.toggleColumnCollapsed("todo")
+        #expect(store.board.columns[0].collapsed == false)
+
+        // Verify persistence by reloading board
+        try store.reloadBoard()
+        #expect(store.board.columns[0].collapsed == false)
+    }
+
+    @Test("Sets column collapsed state directly")
+    func setsColumnCollapsed() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Set collapsed state directly
+        try store.setColumnCollapsed("in-progress", collapsed: true)
+        #expect(store.board.columns[1].collapsed == true)
+
+        try store.setColumnCollapsed("in-progress", collapsed: false)
+        #expect(store.board.columns[1].collapsed == false)
+    }
+
+    @Test("Column collapsed state persists to disk")
+    func collapsedStatePersistsToDisk() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Collapse a column
+        try store.toggleColumnCollapsed("done")
+        #expect(store.board.columns[2].collapsed == true)
+
+        // Read the board.md file and verify it contains collapsed: true
+        let boardPath: URL = tempDir.appendingPathComponent("board.md")
+        let boardContent: String = try String(contentsOf: boardPath, encoding: .utf8)
+        #expect(boardContent.contains("collapsed: true"))
+
+        // Reload from a new store instance to verify persistence
+        let store2: BoardStore = try BoardStore(url: tempDir)
+        #expect(store2.board.columns[2].collapsed == true)
+        #expect(store2.board.columns[0].collapsed == false)
+    }
+
+    // MARK: - Card Duplication Tests
+
+    @Test("Duplicates card with (Copy) suffix")
+    func duplicatesCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Original Card", toColumn: "todo", body: "Card content", labels: ["bug"])
+
+        let original: Card = store.cards[0]
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "Original Card (Copy)")
+        #expect(duplicate.column == "todo")
+        #expect(duplicate.body == "Card content")
+        #expect(duplicate.labels == ["bug"])
+        #expect(store.cards.count == 2)
+
+        // Verify file was created
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/original-card-copy.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Duplicate increments copy number when (Copy) exists")
+    func duplicateIncrementsCopyNumber() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "My Card", toColumn: "todo")
+        try store.addCard(title: "My Card (Copy)", toColumn: "todo")
+
+        let original: Card = store.cards.first { $0.title == "My Card" }!
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "My Card (Copy 2)")
+    }
+
+    @Test("Duplicate continues incrementing copy numbers")
+    func duplicateContinuesIncrementing() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Task", toColumn: "todo")
+        try store.addCard(title: "Task (Copy)", toColumn: "todo")
+        try store.addCard(title: "Task (Copy 2)", toColumn: "todo")
+
+        let original: Card = store.cards.first { $0.title == "Task" }!
+        let duplicate: Card = try store.duplicateCard(original)
+
+        #expect(duplicate.title == "Task (Copy 3)")
+    }
+
+    @Test("Duplicating a copy uses base title")
+    func duplicatingCopyUsesBaseTitle() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Base Title", toColumn: "todo")
+        try store.addCard(title: "Base Title (Copy)", toColumn: "todo")
+
+        // Duplicate "Base Title (Copy)" - should become "Base Title (Copy 2)", not "Base Title (Copy) (Copy)"
+        let copyCard: Card = store.cards.first { $0.title == "Base Title (Copy)" }!
+        let duplicate: Card = try store.duplicateCard(copyCard)
+
+        #expect(duplicate.title == "Base Title (Copy 2)")
+    }
+
+    @Test("Duplicate is positioned after original")
+    func duplicatePositionedAfterOriginal() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "First", toColumn: "todo")
+        try store.addCard(title: "Second", toColumn: "todo")
+        try store.addCard(title: "Third", toColumn: "todo")
+
+        // Duplicate "Second" - should appear between Second and Third
+        let second: Card = store.cards.first { $0.title == "Second" }!
+        _ = try store.duplicateCard(second)
+
+        let todoCards: [Card] = store.cards(forColumn: "todo")
+        #expect(todoCards[0].title == "First")
+        #expect(todoCards[1].title == "Second")
+        #expect(todoCards[2].title == "Second (Copy)")
+        #expect(todoCards[3].title == "Third")
+    }
+
+    @Test("Duplicate of last card is positioned at end")
+    func duplicateLastCardAtEnd() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "First", toColumn: "todo")
+        try store.addCard(title: "Last", toColumn: "todo")
+
+        let last: Card = store.cards.first { $0.title == "Last" }!
+        _ = try store.duplicateCard(last)
+
+        let todoCards: [Card] = store.cards(forColumn: "todo")
+        #expect(todoCards[0].title == "First")
+        #expect(todoCards[1].title == "Last")
+        #expect(todoCards[2].title == "Last (Copy)")
+    }
+
+    @Test("Duplicates multiple cards")
+    func duplicatesMultipleCards() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "in-progress")
+
+        let cards: [Card] = store.cards
+        let duplicates: [Card] = try store.duplicateCards(cards)
+
+        #expect(duplicates.count == 2)
+        #expect(store.cards.count == 4)
+
+        let duplicateTitles: Set<String> = Set(duplicates.map { $0.title })
+        #expect(duplicateTitles.contains("Card A (Copy)"))
+        #expect(duplicateTitles.contains("Card B (Copy)"))
+    }
+
+    @Test("Duplicate has fresh timestamps")
+    func duplicateHasFreshTimestamps() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Old Card", toColumn: "todo")
+
+        // Wait a tiny bit to ensure timestamp difference
+        Thread.sleep(forTimeInterval: 0.01)
+
+        let original: Card = store.cards[0]
+        let duplicate: Card = try store.duplicateCard(original)
+
+        // Duplicate should have newer timestamps
+        #expect(duplicate.created > original.created)
+        #expect(duplicate.modified > original.modified)
+    }
+}
+
+// MARK: - BoardStore Undo/Redo Tests
+
+@Suite("BoardStore Undo/Redo")
+struct BoardStoreUndoTests {
+
+    func createTempBoardDirectory() throws -> URL {
+        let tempDir: URL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SimpleKanbanTests-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+
+        let boardMarkdown: String = """
+            ---
+            title: Test Board
+            columns:
+              - id: todo
+                name: To Do
+              - id: in-progress
+                name: In Progress
+              - id: done
+                name: Done
+            labels:
+              - id: bug
+                name: Bug
+                color: "#e74c3c"
+            ---
+            """
+        try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
+
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/todo"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/in-progress"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: tempDir.appendingPathComponent("cards/done"), withIntermediateDirectories: true)
+
+        return tempDir
+    }
+
+    func cleanup(_ url: URL) {
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    @Test("Undo add card removes the card")
+    func undoAddCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "New Card", toColumn: "todo")
+        #expect(store.cards.count == 1)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.count == 0)
+        // Verify file was deleted
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-card.md")
+        #expect(!FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Redo add card restores the card")
+    func redoAddCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "New Card", toColumn: "todo")
+        undoManager.undo()
+        #expect(store.cards.count == 0)
+        #expect(undoManager.canRedo)
+
+        undoManager.redo()
+
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "New Card")
+    }
+
+    @Test("Undo delete card restores the card")
+    func undoDeleteCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo")
+        let card: Card = store.cards[0]
+
+        // Clear undo stack from add operation
+        undoManager.removeAllActions()
+
+        try store.deleteCard(card)
+        #expect(store.cards.count == 0)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "My Card")
+        // Verify file was restored
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Undo move card restores original position")
+    func undoMoveCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo")
+        let card: Card = store.cards[0]
+        let originalPosition: String = card.position
+
+        undoManager.removeAllActions()
+
+        try store.moveCard(card, toColumn: "in-progress")
+        #expect(store.cards[0].column == "in-progress")
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards[0].column == "todo")
+        #expect(store.cards[0].position == originalPosition)
+        // Verify file moved back
+        let todoPath: URL = tempDir.appendingPathComponent("cards/todo/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: todoPath.path))
+    }
+
+    @Test("Undo archive card restores the card")
+    func undoArchiveCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo")
+        let card: Card = store.cards[0]
+
+        undoManager.removeAllActions()
+
+        try store.archiveCard(card)
+        #expect(store.cards.count == 0)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "My Card")
+        #expect(store.cards[0].column == "todo")
+        // Verify file restored to cards directory
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/my-card.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Undo duplicate card removes the duplicate")
+    func undoDuplicateCard() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Original", toColumn: "todo")
+        let original: Card = store.cards[0]
+
+        undoManager.removeAllActions()
+
+        try store.duplicateCard(original)
+        #expect(store.cards.count == 2)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.count == 1)
+        #expect(store.cards[0].title == "Original")
+    }
+
+    @Test("Undo bulk delete restores all cards")
+    func undoBulkDelete() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "todo")
+        try store.addCard(title: "Card C", toColumn: "todo")
+
+        undoManager.removeAllActions()
+
+        let cardsToDelete: [Card] = store.cards
+        try store.deleteCards(cardsToDelete)
+        #expect(store.cards.count == 0)
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.count == 3)
+        let titles: Set<String> = Set(store.cards.map { $0.title })
+        #expect(titles.contains("Card A"))
+        #expect(titles.contains("Card B"))
+        #expect(titles.contains("Card C"))
+    }
+
+    @Test("Undo bulk move restores original columns")
+    func undoBulkMove() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "todo")
+
+        undoManager.removeAllActions()
+
+        let cardsToMove: [Card] = store.cards
+        try store.moveCards(cardsToMove, toColumn: "done")
+        #expect(store.cards.allSatisfy { $0.column == "done" })
+        #expect(undoManager.canUndo)
+
+        undoManager.undo()
+
+        #expect(store.cards.allSatisfy { $0.column == "todo" })
+    }
+
+    @Test("Action names are set correctly")
+    func actionNamesAreSet() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "New Card", toColumn: "todo")
+        #expect(undoManager.undoActionName == "Add Card")
+
+        undoManager.removeAllActions()
+
+        try store.moveCard(store.cards[0], toColumn: "done")
+        #expect(undoManager.undoActionName == "Move Card")
+
+        undoManager.removeAllActions()
+
+        try store.deleteCard(store.cards[0])
+        #expect(undoManager.undoActionName == "Delete Card")
+    }
+
+    @Test("Multiple undo operations work correctly")
+    func multipleUndoOperations() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        // Disable automatic grouping by event - we'll group manually for test reliability
+        // This is necessary because Swift Testing doesn't run a full run loop like AppKit would
+        undoManager.groupsByEvent = false
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        // Add card (with explicit grouping for test reliability)
+        undoManager.beginUndoGrouping()
+        try store.addCard(title: "Card 1", toColumn: "todo")
+        undoManager.endUndoGrouping()
+        #expect(store.cards.count == 1)
+
+        // Move card (with explicit grouping)
+        undoManager.beginUndoGrouping()
+        try store.moveCard(store.cards[0], toColumn: "done")
+        undoManager.endUndoGrouping()
+        #expect(store.cards[0].column == "done")
+
+        // Add another card (with explicit grouping)
+        undoManager.beginUndoGrouping()
+        try store.addCard(title: "Card 2", toColumn: "todo")
+        undoManager.endUndoGrouping()
+        #expect(store.cards.count == 2)
+
+        // Undo add card 2
+        undoManager.undo()
+        #expect(store.cards.count == 1)
+
+        // Undo move
+        undoManager.undo()
+        #expect(store.cards[0].column == "todo")
+
+        // Undo add card 1
+        undoManager.undo()
+        #expect(store.cards.count == 0)
+
+        // Redo all
+        undoManager.redo()
+        undoManager.redo()
+        undoManager.redo()
+
+        #expect(store.cards.count == 2)
+        #expect(store.cards.contains { $0.title == "Card 1" && $0.column == "done" })
+        #expect(store.cards.contains { $0.title == "Card 2" && $0.column == "todo" })
+    }
+
+    @Test("Operations without undo manager work correctly")
+    func operationsWithoutUndoManager() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // No undo manager set
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        // Operations should work normally
+        try store.addCard(title: "Card", toColumn: "todo")
+        #expect(store.cards.count == 1)
+
+        try store.moveCard(store.cards[0], toColumn: "done")
+        #expect(store.cards[0].column == "done")
+
+        try store.deleteCard(store.cards[0])
+        #expect(store.cards.count == 0)
+    }
+
+    @Test("Undo title change restores original title")
+    func undoTitleChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Original Title", toColumn: "todo")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], title: "New Title")
+        #expect(store.cards[0].title == "New Title")
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Rename Card")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].title == "Original Title")
+        // Verify file was renamed back
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/original-title.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Redo title change reapplies new title")
+    func redoTitleChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Original Title", toColumn: "todo")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], title: "New Title")
+        undoManager.undo()
+        #expect(store.cards[0].title == "Original Title")
+
+        undoManager.redo()
+
+        #expect(store.cards[0].title == "New Title")
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Undo body change restores original body")
+    func undoBodyChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", body: "Original body content")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], body: "New body content")
+        #expect(store.cards[0].body == "New body content")
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Edit Card")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].body == "Original body content")
+    }
+
+    @Test("Redo body change reapplies new body")
+    func redoBodyChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", body: "Original body")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], body: "New body")
+        undoManager.undo()
+        #expect(store.cards[0].body == "Original body")
+
+        undoManager.redo()
+
+        #expect(store.cards[0].body == "New body")
+    }
+
+    @Test("Undo labels change restores original labels")
+    func undoLabelsChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], labels: ["feature", "urgent"])
+        #expect(store.cards[0].labels == ["feature", "urgent"])
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Edit Card Labels")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].labels == ["bug"])
+    }
+
+    @Test("Redo labels change reapplies new labels")
+    func redoLabelsChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], labels: ["feature"])
+        undoManager.undo()
+        #expect(store.cards[0].labels == ["bug"])
+
+        undoManager.redo()
+
+        #expect(store.cards[0].labels == ["feature"])
+    }
+
+    @Test("Multiple edit undos work correctly")
+    func multipleEditUndos() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Card", toColumn: "todo", body: "Body", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        // Make multiple edits
+        try store.updateCard(store.cards[0], title: "New Card")
+        try store.updateCard(store.cards[0], body: "New Body")
+        try store.updateCard(store.cards[0], labels: ["feature"])
+
+        #expect(store.cards[0].title == "New Card")
+        #expect(store.cards[0].body == "New Body")
+        #expect(store.cards[0].labels == ["feature"])
+
+        // Undo all three edits in reverse order
+        undoManager.undo() // labels
+        #expect(store.cards[0].labels == ["bug"])
+
+        undoManager.undo() // body
+        #expect(store.cards[0].body == "Body")
+
+        undoManager.undo() // title
+        #expect(store.cards[0].title == "Card")
+
+        // Redo all
+        undoManager.redo()
+        undoManager.redo()
+        undoManager.redo()
+
+        #expect(store.cards[0].title == "New Card")
+        #expect(store.cards[0].body == "New Body")
+        #expect(store.cards[0].labels == ["feature"])
+    }
 }

@@ -144,7 +144,7 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 ### 4.2 Markdown Body Editor
 - [x] Plain text editor for markdown content
 - [x] Monospace font, reasonable size
-- [ ] Basic syntax highlighting (nice-to-have)
+- [x] Basic syntax highlighting (nice-to-have)
 - [x] Auto-save on changes (debounced)
 
 ### 4.3 New Card Flow
@@ -162,7 +162,8 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [x] `Cmd+N` new board
 - [x] `Cmd+O` open board
 - [x] `Cmd+W` close board
-- [ ] `Cmd+F` search/filter
+- [x] `Cmd+F` search/filter
+- [x] `Cmd+Shift+N` new card in current column
 - [x] Arrow keys navigate cards
 - [x] `Cmd+1/2/3` move to column 1/2/3
 - [x] `Cmd+Backspace` archive card
@@ -172,10 +173,10 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - [x] `Tab/Shift+Tab` navigate between columns
 
 ### 5.2 Search & Filter
-- [ ] Filter bar at top
-- [ ] Search title, body, labels
-- [ ] Filter by label (click label to filter)
-- [ ] Clear filter shows all
+- [x] Filter bar at top
+- [x] Search title, body, labels
+- [x] Filter by label (click label to filter)
+- [x] Clear filter shows all
 
 ### 5.3 Multiple Boards
 - [x] Open folder picker to select board
@@ -188,7 +189,7 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 ### 5.4 Visual Polish
 - [x] Card colors based on labels
 - [x] Smooth drag animations
-- [ ] Column collapse/expand
+- [x] Column collapse/expand
 - [x] Dark mode support (system default)
 
 ### 5.5 Multi-Select & Bulk Operations

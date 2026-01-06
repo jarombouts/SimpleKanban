@@ -27,16 +27,34 @@ extension String: @retroactive Identifiable {
 ///
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
+/// - h/j/k/l: Vim-style navigation (left/down/up/right)
+/// - 0/G/$: Vim-style first/last card (like Home/End)
+/// - x: Vim-style delete card (with confirmation)
+/// - o/e: Vim-style open/edit card (like Enter)
+/// - Shift+Up/Down: Extend selection up/down (multi-select)
+/// - Space: Toggle card in/out of multi-selection
+/// - Home/End: Jump to first/last card in current column
+/// - Option+Up/Down: Page navigation (jump 5 cards)
 /// - Enter: Open selected card for editing
 /// - Delete/Backspace: Delete selected card (with confirmation)
 /// - Cmd+Backspace: Archive selected card
 /// - Cmd+1/2/3...: Move selected card to column 1/2/3...
+/// - Cmd+Up/Down: Reorder card within column (move up/down)
+/// - Cmd+Left/Right: Move card to previous/next column
+/// - Cmd+Shift+N: Create new card in current column
+/// - Cmd+A: Select all cards in current column
+/// - Cmd+D: Duplicate selected card(s)
+/// - Cmd+F: Focus search field
 /// - Escape: Clear selection
 struct BoardView: View {
     @Bindable var store: BoardStore
 
     /// Git sync handler for the board (nil if not a git repo or not initialized)
     var gitSync: GitSync?
+
+    /// Environment undo manager for Edit menu integration.
+    /// This is provided by SwiftUI and automatically integrates with the Edit menu.
+    @Environment(\.undoManager) private var undoManager
 
     /// Card currently open in the detail editor sheet
     @State private var editingCard: Card? = nil
@@ -63,12 +81,24 @@ struct BoardView: View {
     /// Tracks if the board view has keyboard focus
     @FocusState private var isBoardFocused: Bool
 
+    /// Tracks if the search field has focus
+    @FocusState private var isSearchFocused: Bool
+
     /// Title of card currently being dragged (nil when not dragging)
     /// Used to hide the original card while its ghost is being dragged
     @State private var draggingCardTitle: String? = nil
 
     /// Whether to show the board settings sheet
     @State private var showBoardSettings: Bool = false
+
+    /// Whether to show the label filter popover
+    @State private var showLabelFilter: Bool = false
+
+    /// Error message to show in alert (nil when no error)
+    @State private var errorMessage: String? = nil
+
+    /// Whether to show error alert
+    @State private var showErrorAlert: Bool = false
 
     // MARK: - Selection Helpers
 
@@ -127,6 +157,55 @@ struct BoardView: View {
         selectionAnchor = nil
     }
 
+    /// Finds the best card to select after deleting/archiving the given cards.
+    ///
+    /// Strategy: Find the first non-deleted card after the lowest deleted card
+    /// in the same column. If none exists, try the card before. If the column
+    /// becomes empty, returns nil (clear selection).
+    ///
+    /// This provides intuitive UX: after bulk delete, selection moves to a
+    /// nearby card rather than disappearing completely.
+    ///
+    /// - Parameter deletingTitles: Set of card titles being deleted
+    /// - Returns: Title of card to select next, or nil to clear selection
+    private func findNextSelection(afterDeleting deletingTitles: Set<String>) -> String? {
+        // Find all cards being deleted and group by column
+        let deletingCards: [Card] = store.cards(withTitles: deletingTitles)
+        guard !deletingCards.isEmpty else { return nil }
+
+        // Use the first deleted card's column as the target column for selection.
+        // (For multi-column bulk delete, this is arbitrary but reasonable.)
+        let targetColumn: String = deletingCards[0].column
+        let columnCards: [Card] = store.cards(forColumn: targetColumn)
+
+        // Find the indices of deleted cards in this column
+        let deletingTitlesInColumn: Set<String> = Set(deletingCards.filter { $0.column == targetColumn }.map { $0.title })
+        let deletingIndices: [Int] = columnCards.enumerated()
+            .filter { deletingTitlesInColumn.contains($0.element.title) }
+            .map { $0.offset }
+
+        guard let lowestDeletedIndex: Int = deletingIndices.min() else { return nil }
+
+        // Find the first card after the lowest deleted index that isn't being deleted
+        for index in lowestDeletedIndex..<columnCards.count {
+            let card: Card = columnCards[index]
+            if !deletingTitles.contains(card.title) {
+                return card.title
+            }
+        }
+
+        // No cards after - try cards before the lowest deleted index
+        for index in stride(from: lowestDeletedIndex - 1, through: 0, by: -1) {
+            let card: Card = columnCards[index]
+            if !deletingTitles.contains(card.title) {
+                return card.title
+            }
+        }
+
+        // Column will be empty after delete
+        return nil
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
@@ -141,7 +220,9 @@ struct BoardView: View {
                         ForEach(store.board.columns, id: \.id) { column in
                             ColumnView(
                                 column: column,
-                                cards: store.cards(forColumn: column.id),
+                                cards: store.filteredCards(forColumn: column.id),
+                                allCardsCount: store.cards(forColumn: column.id).count,
+                                isFiltering: store.isFiltering,
                                 labels: store.board.labels,
                                 columnWidth: columnWidth,
                                 selectedCardTitles: selectedCardTitles,
@@ -180,11 +261,39 @@ struct BoardView: View {
                                 onArchiveCard: { card in
                                     try? store.archiveCard(card)
                                     selectedCardTitles.remove(card.title)
+                                },
+                                onDuplicateCard: { card in
+                                    if let duplicate: Card = try? store.duplicateCard(card) {
+                                        // Select the newly duplicated card
+                                        selectSingle(duplicate.title)
+                                    }
+                                },
+                                onToggleCollapse: {
+                                    try? store.toggleColumnCollapsed(column.id)
                                 }
                             )
                         }
                     }
                     .padding(padding)
+                }
+                // Overlay "No results" message when filtering returns no cards
+                .overlay {
+                    if store.isFiltering && store.filteredCards.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 36))
+                                .foregroundStyle(.tertiary)
+                            Text("No cards match your filter")
+                                .font(.headline)
+                                .foregroundStyle(.secondary)
+                            Button("Clear Filter") {
+                                store.clearFilters()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+                    }
                 }
             }
             .focusable()
@@ -193,6 +302,12 @@ struct BoardView: View {
             .onAppear {
                 // Auto-focus the board when it appears
                 isBoardFocused = true
+                // Connect the environment undo manager to the store for undo/redo support
+                store.undoManager = undoManager
+            }
+            .onChange(of: undoManager) { _, newValue in
+                // Keep undo manager in sync if environment changes
+                store.undoManager = newValue
             }
             .onKeyPress { keyPress in
                 handleKeyPress(keyPress)
@@ -200,6 +315,17 @@ struct BoardView: View {
 
             // Bottom statusbar with selection info
             HStack {
+                // Filter indicator on the left
+                if store.isFiltering {
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                        Text("Showing \(store.filteredCards.count) of \(store.cards.count) cards")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Spacer()
 
                 // Selection status text
@@ -212,7 +338,7 @@ struct BoardView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else {
+                } else if !store.isFiltering {
                     Text("\(store.cards.count) cards")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -225,14 +351,85 @@ struct BoardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.board.title)
         .toolbar {
+            // Search field - leading position
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 8) {
+                    // Search text field
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        TextField("Search cards...", text: $store.searchText)
+                            .textFieldStyle(.plain)
+                            .frame(width: 150)
+                            .focused($isSearchFocused)
+                        if !store.searchText.isEmpty {
+                            Button(action: {
+                                store.searchText = ""
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+
+                    // Label filter button with popover
+                    Button(action: {
+                        showLabelFilter.toggle()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tag")
+                            if !store.filterLabels.isEmpty {
+                                Text("\(store.filterLabels.count)")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .popover(isPresented: $showLabelFilter) {
+                        LabelFilterPopover(
+                            labels: store.board.labels,
+                            selectedLabels: $store.filterLabels
+                        )
+                    }
+                    .help("Filter by labels")
+
+                    // Clear all filters button (only shown when filtering)
+                    if store.isFiltering {
+                        Button(action: {
+                            store.clearFilters()
+                        }) {
+                            Image(systemName: "xmark.circle")
+                        }
+                        .help("Clear all filters")
+                    }
+
+                    Divider()
+                }
+            }
+
             ToolbarItemGroup(placement: .automatic) {
                 // Archive button - enabled when cards selected, also accepts drag
                 ArchiveToolbarButton(
                     isEnabled: !selectedCardTitles.isEmpty,
                     onArchive: {
+                        // Calculate next selection BEFORE archiving
+                        let nextSelection: String? = findNextSelection(afterDeleting: selectedCardTitles)
+
                         let cards: [Card] = store.cards(withTitles: selectedCardTitles)
                         try? store.archiveCards(cards)
-                        clearSelection()
+
+                        // Update selection to nearby card
+                        if let next = nextSelection {
+                            selectSingle(next)
+                        } else {
+                            clearSelection()
+                        }
                     },
                     onDrop: { titles in
                         let cards: [Card] = store.cards(withTitles: titles)
@@ -255,15 +452,10 @@ struct BoardView: View {
                     }
                 )
 
-                // Git sync status indicator (if git repo)
+                // Git sync status indicator (only shown if board is in a git repository)
                 if let gitSync = gitSync {
                     Divider()
                     GitStatusIndicator(gitSync: gitSync)
-                } else {
-                    // Debug: show when gitSync is nil
-                    Text("(no git)")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
 
                 // Settings button
@@ -309,9 +501,15 @@ struct BoardView: View {
                         addingCardToColumn = nil
                         // Select the newly created card
                         selectSingle(title)
+                    } catch CardWriterError.duplicateTitle(let title) {
+                        // Show duplicate title error to user
+                        errorMessage = "A card with the title \"\(title)\" already exists."
+                        showErrorAlert = true
+                        addingCardToColumn = nil
                     } catch {
-                        // Log error for debugging - card creation failed
-                        print("ERROR: Failed to create card '\(title)': \(error)")
+                        // Show generic error to user
+                        errorMessage = "Failed to create card: \(error.localizedDescription)"
+                        showErrorAlert = true
                         addingCardToColumn = nil
                     }
                 },
@@ -330,9 +528,18 @@ struct BoardView: View {
                 cardsToDelete.removeAll()
             }
             Button("Delete\(cardsToDelete.count > 1 ? " \(cardsToDelete.count) Cards" : "")", role: .destructive) {
+                // Calculate next selection BEFORE deleting, while cards still exist
+                let nextSelection: String? = findNextSelection(afterDeleting: cardsToDelete)
+
                 let cards: [Card] = store.cards(withTitles: cardsToDelete)
                 try? store.deleteCards(cards)
-                selectedCardTitles.subtract(cardsToDelete)
+
+                // Update selection to nearby card instead of just clearing
+                if let next = nextSelection {
+                    selectSingle(next)
+                } else {
+                    clearSelection()
+                }
                 cardsToDelete.removeAll()
             }
         } message: {
@@ -349,6 +556,15 @@ struct BoardView: View {
                     showBoardSettings = false
                 }
             )
+        }
+        .alert("Error", isPresented: $showErrorAlert) {
+            Button("OK", role: .cancel) {
+                errorMessage = nil
+            }
+        } message: {
+            if let message = errorMessage {
+                Text(message)
+            }
         }
     }
 
@@ -399,6 +615,124 @@ struct BoardView: View {
                 }
                 return navigationController.handleCmdDelete(currentSelection: currentSelection)
             }
+
+            // Cmd+Up moves card up in column (single selection only)
+            if keyPress.key == .upArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowUp(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+Down moves card down in column (single selection only)
+            if keyPress.key == .downArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowDown(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+Left moves card to previous column (single selection only)
+            if keyPress.key == .leftArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowLeft(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+Right moves card to next column (single selection only)
+            if keyPress.key == .rightArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowRight(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+F focuses search field
+            if keyChar == "f" || keyChar == "F" {
+                return .focusSearch
+            }
+
+            // Cmd+A selects all cards in the current column
+            if keyChar == "a" || keyChar == "A" {
+                return navigationController.handleSelectAll(currentSelection: currentSelection)
+            }
+
+            // Cmd+D duplicates the selected card(s)
+            if keyChar == "d" || keyChar == "D" {
+                if selectedCardTitles.count > 1 {
+                    return .bulkDuplicate(cardTitles: selectedCardTitles)
+                } else if let title = currentSelection {
+                    return .duplicateCard(cardTitle: title)
+                }
+                return .none
+            }
+
+            // Cmd+Shift+N creates a new card in the current column (or first column if none selected)
+            if keyPress.modifiers.contains(.shift) && (keyChar == "n" || keyChar == "N") {
+                // Determine which column to add to:
+                // - If a card is selected, use that card's column
+                // - Otherwise, use the first column
+                if let title = currentSelection,
+                   let card = store.card(withTitle: title) {
+                    return .newCard(inColumn: card.column)
+                } else if let firstColumn = store.board.columns.first {
+                    return .newCard(inColumn: firstColumn.id)
+                }
+                return .none
+            }
+        }
+
+        // Option+Arrow for page navigation (jump multiple cards)
+        if keyPress.modifiers.contains(.option) {
+            if keyPress.key == .upArrow {
+                return navigationController.handleOptionArrowUp(currentSelection: currentSelection)
+            }
+            if keyPress.key == .downArrow {
+                return navigationController.handleOptionArrowDown(currentSelection: currentSelection)
+            }
+        }
+
+        // Shift+Arrow for extending selection
+        if keyPress.modifiers.contains(.shift) {
+            if keyPress.key == .upArrow {
+                return navigationController.handleShiftArrowUp(currentSelection: currentSelection)
+            }
+            if keyPress.key == .downArrow {
+                return navigationController.handleShiftArrowDown(currentSelection: currentSelection)
+            }
+        }
+
+        // Vim-style navigation (h/j/k/l, 0/G/$) - only when no modifiers pressed
+        if keyPress.modifiers.isEmpty {
+            let keyChar: Character = keyPress.key.character
+            switch keyChar {
+            case "j", "J":
+                return navigationController.handleArrowDown(currentSelection: currentSelection)
+            case "k", "K":
+                return navigationController.handleArrowUp(currentSelection: currentSelection)
+            case "h", "H":
+                return navigationController.handleArrowLeft(currentSelection: currentSelection)
+            case "l", "L":
+                return navigationController.handleArrowRight(currentSelection: currentSelection)
+            case "0":
+                // Vim: 0 goes to first item (like Home)
+                return navigationController.handleHome(currentSelection: currentSelection)
+            case "G", "$":
+                // Vim: G or $ goes to last item (like End)
+                return navigationController.handleEnd(currentSelection: currentSelection)
+            case "x", "X":
+                // Vim: x deletes item (like Delete key, with confirmation)
+                if selectedCardTitles.count > 1 {
+                    return .bulkDelete(cardTitles: selectedCardTitles)
+                }
+                return navigationController.handleDelete(currentSelection: currentSelection)
+            case "o", "O", "e", "E":
+                // Vim: o (open) or e (edit) opens card for editing (like Enter)
+                return navigationController.handleEnter(currentSelection: currentSelection)
+            default:
+                break
+            }
         }
 
         // Regular keys
@@ -424,6 +758,12 @@ struct BoardView: View {
         case .tab:
             let shiftPressed: Bool = keyPress.modifiers.contains(.shift)
             return navigationController.handleTab(currentSelection: currentSelection, shiftPressed: shiftPressed)
+        case .home:
+            return navigationController.handleHome(currentSelection: currentSelection)
+        case .end:
+            return navigationController.handleEnd(currentSelection: currentSelection)
+        case .space:
+            return navigationController.handleSpace(currentSelection: currentSelection)
         default:
             return .none
         }
@@ -437,6 +777,21 @@ struct BoardView: View {
         switch result {
         case .selectionChanged(let cardTitle):
             selectSingle(cardTitle)
+            return true
+
+        case .extendSelectionUp(let toCardTitle):
+            // Extend selection using selectRange (like Shift+Click)
+            selectRange(to: toCardTitle)
+            return true
+
+        case .extendSelectionDown(let toCardTitle):
+            // Extend selection using selectRange (like Shift+Click)
+            selectRange(to: toCardTitle)
+            return true
+
+        case .toggleCardInSelection(let cardTitle):
+            // Toggle card in/out of multi-selection (like Cmd+Click but via Space bar)
+            toggleSelection(cardTitle)
             return true
 
         case .selectionCleared:
@@ -459,8 +814,17 @@ struct BoardView: View {
 
         case .archiveCard(let cardTitle):
             if let card = store.card(withTitle: cardTitle) {
+                // Calculate next selection BEFORE archiving
+                let nextSelection: String? = findNextSelection(afterDeleting: [cardTitle])
+
                 try? store.archiveCard(card)
-                selectedCardTitles.remove(cardTitle)
+
+                // Update selection to nearby card
+                if let next = nextSelection {
+                    selectSingle(next)
+                } else {
+                    clearSelection()
+                }
             }
             return true
 
@@ -472,15 +836,64 @@ struct BoardView: View {
             }
             return true
 
+        case .reorderCardUp(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                let columnCards: [Card] = store.cards(forColumn: card.column)
+                if let currentIndex = columnCards.firstIndex(where: { $0.title == cardTitle }),
+                   currentIndex > 0 {
+                    // Move to the position before the previous card
+                    try? store.moveCard(card, toColumn: card.column, atIndex: currentIndex - 1)
+                }
+            }
+            return true
+
+        case .reorderCardDown(let cardTitle):
+            if let card = store.card(withTitle: cardTitle) {
+                let columnCards: [Card] = store.cards(forColumn: card.column)
+                if let currentIndex = columnCards.firstIndex(where: { $0.title == cardTitle }),
+                   currentIndex < columnCards.count - 1 {
+                    // Move to the position after the next card (index + 2 because we're inserting)
+                    try? store.moveCard(card, toColumn: card.column, atIndex: currentIndex + 2)
+                }
+            }
+            return true
+
+        case .moveCardToPreviousColumn(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let currentColumnIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+               currentColumnIndex > 0 {
+                let previousColumn: Column = store.board.columns[currentColumnIndex - 1]
+                try? store.moveCard(card, toColumn: previousColumn.id, atIndex: nil)
+            }
+            return true
+
+        case .moveCardToNextColumn(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let currentColumnIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+               currentColumnIndex < store.board.columns.count - 1 {
+                let nextColumn: Column = store.board.columns[currentColumnIndex + 1]
+                try? store.moveCard(card, toColumn: nextColumn.id, atIndex: nil)
+            }
+            return true
+
         case .bulkDelete(let cardTitles):
             cardsToDelete = cardTitles
             showDeleteConfirmation = true
             return true
 
         case .bulkArchive(let cardTitles):
+            // Calculate next selection BEFORE archiving
+            let nextSelection: String? = findNextSelection(afterDeleting: cardTitles)
+
             let cards: [Card] = store.cards(withTitles: cardTitles)
             try? store.archiveCards(cards)
-            clearSelection()
+
+            // Update selection to nearby card
+            if let next = nextSelection {
+                selectSingle(next)
+            } else {
+                clearSelection()
+            }
             return true
 
         case .bulkMove(let cardTitles, let columnIndex):
@@ -490,6 +903,35 @@ struct BoardView: View {
             let targetColumn: Column = store.board.columns[columnIndex]
             let cards: [Card] = store.cards(withTitles: cardTitles)
             try? store.moveCards(cards, toColumn: targetColumn.id)
+            return true
+
+        case .focusSearch:
+            isSearchFocused = true
+            return true
+
+        case .selectAllInColumn(let cardTitles):
+            selectedCardTitles = cardTitles
+            return true
+
+        case .duplicateCard(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let duplicate = try? store.duplicateCard(card) {
+                // Select the newly duplicated card
+                selectSingle(duplicate.title)
+            }
+            return true
+
+        case .bulkDuplicate(let cardTitles):
+            let cards: [Card] = store.cards(withTitles: cardTitles)
+            if let duplicates = try? store.duplicateCards(cards), !duplicates.isEmpty {
+                // Select all the newly duplicated cards
+                selectedCardTitles = Set(duplicates.map { $0.title })
+            }
+            return true
+
+        case .newCard(let columnID):
+            // Open the new card modal for the specified column
+            addingCardToColumn = columnID
             return true
 
         case .none:
@@ -540,8 +982,14 @@ struct BoardView: View {
 struct ColumnView: View {
     let column: Column
     let cards: [Card]
+    /// Total card count in column (before filtering), used to show "X of Y" when filtering
+    let allCardsCount: Int
+    /// Whether any filter is currently active
+    let isFiltering: Bool
     let labels: [CardLabel]
     let columnWidth: CGFloat
+    /// Width to use when column is collapsed (narrow strip)
+    let collapsedWidth: CGFloat = 48
 
     /// Titles of currently selected cards (for multi-select highlight)
     let selectedCardTitles: Set<String>
@@ -557,6 +1005,10 @@ struct ColumnView: View {
     /// Callback for move with card title (not full Card) since we only have title from drag
     let onMoveCard: (String, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
+    /// Callback for duplicating a card
+    let onDuplicateCard: (Card) -> Void
+    /// Callback to toggle the collapsed state
+    let onToggleCollapse: () -> Void
 
     /// Whether the column itself is targeted for a drop
     @State private var isColumnTargeted: Bool = false
@@ -572,9 +1024,91 @@ struct ColumnView: View {
     private let dropGapHeight: CGFloat = 60
 
     var body: some View {
+        // Show collapsed or expanded view based on column state
+        if column.collapsed {
+            collapsedBody
+        } else {
+            expandedBody
+        }
+    }
+
+    /// Collapsed column view - just a narrow strip with vertical name and card count.
+    /// Click anywhere to expand.
+    @ViewBuilder
+    private var collapsedBody: some View {
+        VStack(spacing: 8) {
+            // Expand button at top
+            Button(action: onToggleCollapse) {
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Expand column")
+            .padding(.top, 12)
+
+            // Vertical column name (rotated)
+            Text(column.name)
+                .font(.subheadline)
+                .fontWeight(.semibold)
+                .rotationEffect(.degrees(-90))
+                .fixedSize()
+                .frame(width: collapsedWidth - 16)
+                .padding(.vertical, 4)
+
+            Spacer()
+
+            // Card count badge at bottom
+            Text("\(allCardsCount)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.2))
+                .clipShape(Capsule())
+                .padding(.bottom, 12)
+        }
+        .frame(width: collapsedWidth)
+        .frame(maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(nsColor: .controlBackgroundColor))
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onToggleCollapse()
+        }
+        // Allow drops on collapsed columns too - cards go to end
+        .onDrop(of: [.text], delegate: CardDropDelegate(
+            columnID: column.id,
+            cards: cards,
+            cardFrames: $cardFrames,
+            dropTargetIndex: $dropTargetIndex,
+            isColumnTargeted: $isColumnTargeted,
+            draggingCardTitle: $draggingCardTitle,
+            onMoveCard: onMoveCard
+        ))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isColumnTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+    }
+
+    /// Expanded column view - full width with card list.
+    @ViewBuilder
+    private var expandedBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Column header with add button
+            // Column header with collapse button and add button
             HStack(spacing: 8) {
+                // Collapse button
+                Button(action: onToggleCollapse) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse column")
+
                 Text(column.name)
                     .font(.headline)
                     .fontWeight(.semibold)
@@ -589,13 +1123,24 @@ struct ColumnView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                Text("\(cards.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.2))
-                    .clipShape(Capsule())
+                // Card count - show "X of Y" when filtering
+                if isFiltering {
+                    Text("\(cards.count) of \(allCardsCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.2))
+                        .clipShape(Capsule())
+                } else {
+                    Text("\(cards.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.2))
+                        .clipShape(Capsule())
+                }
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -604,6 +1149,20 @@ struct ColumnView: View {
             // Cards list - cards visually shift to show insertion gap
             ScrollView(.vertical, showsIndicators: false) {
                 VStack(spacing: 4) {
+                    // Empty state when no cards in column
+                    if cards.isEmpty && !isFiltering {
+                        VStack(spacing: 8) {
+                            Image(systemName: "plus.rectangle.on.rectangle")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.tertiary)
+                            Text("No cards yet")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+
                     ForEach(Array(cards.enumerated()), id: \.element.title) { index, card in
                         // Add gap before this card if dropping here
                         if dropTargetIndex == index {
@@ -638,6 +1197,10 @@ struct ColumnView: View {
                                 Button("Edit") {
                                     onCardDoubleTap(card)
                                 }
+                                Button("Duplicate") {
+                                    onDuplicateCard(card)
+                                }
+                                Divider()
                                 Button("Archive") {
                                     onArchiveCard(card)
                                 }
@@ -803,12 +1366,16 @@ struct CardDropDelegate: DropDelegate {
 /// - First line of body (if any)
 /// - Label chips (colored badges)
 /// - Selection highlight when selected via keyboard
+/// - Hover effect for better interactivity feedback
 struct CardView: View {
     let card: Card
     let labels: [CardLabel]
 
     /// Whether this card is currently selected (keyboard navigation)
     var isSelected: Bool = false
+
+    /// Whether the mouse is hovering over this card
+    @State private var isHovered: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -850,7 +1417,12 @@ struct CardView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2)
         )
-        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+        .shadow(color: .black.opacity(isHovered ? 0.2 : 0.1), radius: isHovered ? 4 : 2, y: isHovered ? 2 : 1)
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
     }
 }
 
@@ -873,6 +1445,365 @@ struct LabelChip: View {
             .background(color.opacity(0.2))
             .foregroundStyle(color)
             .clipShape(Capsule())
+    }
+}
+
+// MARK: - MarkdownTextEditor
+
+/// A text editor with markdown syntax highlighting.
+///
+/// Wraps NSTextView to provide attributed text editing with real-time
+/// syntax highlighting for common markdown elements:
+/// - Headers (# to ######)
+/// - Bold (**text** or __text__)
+/// - Italic (*text* or _text_)
+/// - Code (inline `code` and fenced ```code blocks```)
+/// - Lists (- or * or numbered)
+/// - Blockquotes (> text)
+/// - Links ([text](url))
+///
+/// The text is stored as plain markdown - only the visual display is styled.
+/// This maintains compatibility with the file format.
+struct MarkdownTextEditor: NSViewRepresentable {
+    @Binding var text: String
+
+    /// Coordinator handles NSTextViewDelegate callbacks to sync text changes
+    /// back to the SwiftUI binding.
+    ///
+    /// Marked @MainActor because all NSTextView operations must happen on the main thread,
+    /// and Swift 6 strict concurrency requires this for accessing textStorage and other UI properties.
+    @MainActor
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: MarkdownTextEditor
+        /// Flag to prevent recursive updates when we're applying highlighting
+        var isUpdating: Bool = false
+
+        init(_ parent: MarkdownTextEditor) {
+            self.parent = parent
+        }
+
+        /// Called whenever the text content changes.
+        /// Updates the binding and re-applies syntax highlighting.
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            guard !isUpdating else { return }
+
+            // Update binding with plain text
+            let newText: String = textView.string
+            if parent.text != newText {
+                parent.text = newText
+            }
+
+            // Re-apply highlighting
+            applyHighlighting(to: textView)
+        }
+
+        /// Applies markdown syntax highlighting to the text view.
+        /// Preserves the cursor position during updates.
+        func applyHighlighting(to textView: NSTextView) {
+            guard let textStorage = textView.textStorage else { return }
+
+            isUpdating = true
+            defer { isUpdating = false }
+
+            // Save selection
+            let selectedRanges: [NSValue] = textView.selectedRanges as [NSValue]
+
+            // Get the full text range
+            let fullRange: NSRange = NSRange(location: 0, length: textStorage.length)
+
+            // Start with base attributes
+            let baseFont: NSFont = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            let baseColor: NSColor = NSColor.textColor
+
+            textStorage.beginEditing()
+
+            // Reset to base style
+            textStorage.setAttributes([
+                .font: baseFont,
+                .foregroundColor: baseColor
+            ], range: fullRange)
+
+            let text: String = textStorage.string
+
+            // Apply markdown patterns in order (later patterns can override earlier)
+            applyCodeBlockHighlighting(to: textStorage, text: text)
+            applyInlineCodeHighlighting(to: textStorage, text: text)
+            applyHeaderHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyBoldHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyItalicHighlighting(to: textStorage, text: text, baseFont: baseFont)
+            applyListHighlighting(to: textStorage, text: text)
+            applyBlockquoteHighlighting(to: textStorage, text: text)
+            applyLinkHighlighting(to: textStorage, text: text)
+
+            textStorage.endEditing()
+
+            // Restore selection
+            textView.selectedRanges = selectedRanges
+        }
+
+        // MARK: - Highlighting Helpers
+
+        /// Highlights fenced code blocks (```...```)
+        private func applyCodeBlockHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match fenced code blocks: ``` followed by optional language, content, and closing ```
+            // The pattern: ```[optional lang]\n..content..\n```
+            let pattern: String = "```[a-zA-Z]*\\n[\\s\\S]*?```"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.systemOrange,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.1, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights inline code (`code`)
+        private func applyInlineCodeHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match backtick-wrapped text (but not inside code blocks, handled by order)
+            let pattern: String = "`[^`\\n]+`"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .font: NSFont.monospacedSystemFont(ofSize: 12, weight: .regular),
+                    .foregroundColor: NSColor.systemOrange,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.05, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights headers (# Header)
+        private func applyHeaderHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match lines starting with 1-6 # characters followed by space and text
+            // H1 is largest, H6 is smallest
+            let headerConfigs: [(pattern: String, size: CGFloat, weight: NSFont.Weight)] = [
+                ("^#{6}\\s+.+$", 13, .semibold),  // H6
+                ("^#{5}\\s+.+$", 14, .semibold),  // H5
+                ("^#{4}\\s+.+$", 15, .semibold),  // H4
+                ("^#{3}\\s+.+$", 16, .bold),      // H3
+                ("^#{2}\\s+.+$", 18, .bold),      // H2
+                ("^#{1}\\s+.+$", 20, .bold),      // H1
+            ]
+
+            for config in headerConfigs {
+                applyPattern(
+                    config.pattern,
+                    to: textStorage,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(ofSize: config.size, weight: config.weight),
+                        .foregroundColor: NSColor.systemBlue
+                    ]
+                )
+            }
+        }
+
+        /// Highlights bold text (**text** or __text__)
+        private func applyBoldHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match **text** or __text__ (non-greedy, no newlines)
+            let patterns: [String] = [
+                "\\*\\*[^*\\n]+\\*\\*",
+                "__[^_\\n]+__"
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    attributes: [
+                        .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .bold)
+                    ]
+                )
+            }
+        }
+
+        /// Highlights italic text (*text* or _text_)
+        private func applyItalicHighlighting(to textStorage: NSTextStorage, text: String, baseFont: NSFont) {
+            // Match *text* or _text_ (single delimiter, not bold)
+            // Negative lookbehind/ahead not fully supported, so we use simple patterns
+            // and rely on bold being applied after (overriding)
+            let patterns: [String] = [
+                "(?<!\\*)\\*[^*\\n]+\\*(?!\\*)",
+                "(?<!_)_[^_\\n]+_(?!_)"
+            ]
+
+            // Create italic font using the font descriptor
+            let italicFont: NSFont = {
+                let descriptor: NSFontDescriptor = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular).fontDescriptor
+                let italicDescriptor: NSFontDescriptor = descriptor.withSymbolicTraits(.italic)
+                return NSFont(descriptor: italicDescriptor, size: 13) ?? NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+            }()
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    attributes: [
+                        .font: italicFont,
+                        .foregroundColor: NSColor.textColor
+                    ]
+                )
+            }
+        }
+
+        /// Highlights list markers (-, *, numbered)
+        private func applyListHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match list markers at start of line
+            let patterns: [String] = [
+                "^\\s*[-*+]\\s",           // Unordered: - item, * item, + item
+                "^\\s*\\d+\\.\\s"          // Ordered: 1. item
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: textStorage,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .foregroundColor: NSColor.systemPurple
+                    ]
+                )
+            }
+        }
+
+        /// Highlights blockquotes (> text)
+        private func applyBlockquoteHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match lines starting with >
+            let pattern: String = "^>\\s*.+$"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                options: [.anchorsMatchLines],
+                attributes: [
+                    .foregroundColor: NSColor.systemGray,
+                    .backgroundColor: NSColor.textBackgroundColor.blended(withFraction: 0.03, of: .gray) ?? NSColor.textBackgroundColor
+                ]
+            )
+        }
+
+        /// Highlights links [text](url)
+        private func applyLinkHighlighting(to textStorage: NSTextStorage, text: String) {
+            // Match markdown links: [text](url)
+            let pattern: String = "\\[([^\\]]+)\\]\\(([^)]+)\\)"
+            applyPattern(
+                pattern,
+                to: textStorage,
+                text: text,
+                attributes: [
+                    .foregroundColor: NSColor.linkColor,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ]
+            )
+        }
+
+        /// Helper to apply regex-based highlighting.
+        private func applyPattern(
+            _ pattern: String,
+            to textStorage: NSTextStorage,
+            text: String,
+            options: NSRegularExpression.Options = [],
+            attributes: [NSAttributedString.Key: Any]
+        ) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+                return
+            }
+
+            let nsText: NSString = text as NSString
+            let fullRange: NSRange = NSRange(location: 0, length: nsText.length)
+
+            regex.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                textStorage.addAttributes(attributes, range: matchRange)
+            }
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        // Create the text view
+        let textView: NSTextView = NSTextView()
+        textView.isRichText = false
+        textView.allowsUndo = true
+        textView.isAutomaticQuoteSubstitutionEnabled = false
+        textView.isAutomaticDashSubstitutionEnabled = false
+        textView.isAutomaticTextReplacementEnabled = false
+        textView.isAutomaticSpellingCorrectionEnabled = false
+
+        // Use monospace font for consistency with markdown editing
+        textView.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        textView.textColor = NSColor.textColor
+        textView.backgroundColor = NSColor.textBackgroundColor
+
+        // Configure text container for proper layout
+        textView.textContainer?.containerSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.isHorizontallyResizable = false
+        textView.isVerticallyResizable = true
+
+        // Set delegate
+        textView.delegate = context.coordinator
+
+        // Set initial text and apply highlighting
+        textView.string = text
+        context.coordinator.applyHighlighting(to: textView)
+
+        // Wrap in scroll view for scrolling support
+        let scrollView: NSScrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.borderType = .noBorder
+        scrollView.documentView = textView
+
+        // Make text view fill scroll view width
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.autoresizingMask = [.width]
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        guard let textView = scrollView.documentView as? NSTextView else { return }
+
+        // Only update if text actually changed (avoid cursor jumping)
+        if textView.string != text {
+            // Save selection
+            let selectedRanges: [NSValue] = textView.selectedRanges
+
+            // Update text
+            textView.string = text
+
+            // Apply highlighting
+            context.coordinator.applyHighlighting(to: textView)
+
+            // Restore selection if valid
+            let maxLocation: Int = textView.string.count
+            let validRanges: [NSValue] = selectedRanges.compactMap { value in
+                let range: NSRange = value.rangeValue
+                if range.location <= maxLocation {
+                    let newLength: Int = min(range.length, maxLocation - range.location)
+                    return NSValue(range: NSRange(location: range.location, length: newLength))
+                }
+                return nil
+            }
+            if !validRanges.isEmpty {
+                textView.selectedRanges = validRanges
+            }
+        }
     }
 }
 
@@ -971,8 +1902,7 @@ struct CardDetailView: View {
                 }
 
                 Section("Description") {
-                    TextEditor(text: $editedCard.body)
-                        .font(.body)
+                    MarkdownTextEditor(text: $editedCard.body)
                         .frame(minHeight: 200)
                 }
             }
@@ -1120,8 +2050,7 @@ struct NewCardView: View {
                     }
 
                     Section("Description (optional)") {
-                        TextEditor(text: $cardBody)
-                            .font(.body)
+                        MarkdownTextEditor(text: $cardBody)
                             .frame(minHeight: 200)
                     }
                 }
@@ -1272,6 +2201,65 @@ struct DeleteToolbarButton: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isTargeted ? Color.red : Color.clear, lineWidth: 2)
         )
+    }
+}
+
+// MARK: - Label Filter Popover
+
+/// Popover for selecting labels to filter by.
+///
+/// Shows a list of all available labels with checkboxes.
+/// Cards must have ALL selected labels to be shown (AND logic).
+struct LabelFilterPopover: View {
+    let labels: [CardLabel]
+    @Binding var selectedLabels: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Filter by Labels")
+                .font(.headline)
+                .padding(.bottom, 4)
+
+            if labels.isEmpty {
+                Text("No labels defined")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                Text("Cards matching all selected labels:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(labels, id: \.id) { label in
+                    let isSelected: Bool = selectedLabels.contains(label.id)
+                    Button(action: {
+                        if isSelected {
+                            selectedLabels.remove(label.id)
+                        } else {
+                            selectedLabels.insert(label.id)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                            LabelChip(labelID: label.id, labels: labels)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if !selectedLabels.isEmpty {
+                    Divider()
+                    Button("Clear Filter") {
+                        selectedLabels.removeAll()
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 200)
     }
 }
 

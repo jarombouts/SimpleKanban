@@ -279,13 +279,20 @@ public struct Board: Equatable, Sendable {
 }
 
 /// A column in the Kanban board.
+///
+/// Columns can be collapsed to save horizontal space. When collapsed,
+/// only the column header and card count are visible. Click to expand.
 public struct Column: Equatable, Sendable {
     public var id: String
     public var name: String
+    /// Whether the column is collapsed (shows only header + card count).
+    /// Defaults to false (expanded).
+    public var collapsed: Bool
 
-    public init(id: String, name: String) {
+    public init(id: String, name: String, collapsed: Bool = false) {
         self.id = id
         self.name = name
+        self.collapsed = collapsed
     }
 }
 
@@ -368,7 +375,9 @@ extension Board {
 
         let columns: [Column] = columnsData.compactMap { dict in
             guard let id = dict["id"], let name = dict["name"] else { return nil }
-            return Column(id: id, name: name)
+            // collapsed is optional, defaults to false if not present
+            let collapsed: Bool = dict["collapsed"] == "true"
+            return Column(id: id, name: name, collapsed: collapsed)
         }
 
         if columns.isEmpty {
@@ -404,6 +413,10 @@ extension Board {
         for column in columns {
             lines.append("  - id: \(column.id)")
             lines.append("    name: \(column.name)")
+            // Only write collapsed if true (minimizes git diffs)
+            if column.collapsed {
+                lines.append("    collapsed: true")
+            }
         }
 
         if !labels.isEmpty {

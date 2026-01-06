@@ -41,6 +41,42 @@ enum NavigationResult: Equatable {
     /// Multiple cards should be moved to a different column
     case bulkMove(cardTitles: Set<String>, toColumnIndex: Int)
 
+    /// Card should be duplicated
+    case duplicateCard(cardTitle: String)
+
+    /// Multiple cards should be duplicated
+    case bulkDuplicate(cardTitles: Set<String>)
+
+    /// Focus the search field
+    case focusSearch
+
+    /// Select all cards in the current column (Cmd+A)
+    case selectAllInColumn(cardTitles: Set<String>)
+
+    /// Create a new card in the specified column (Cmd+Shift+N)
+    case newCard(inColumn: String)
+
+    /// Reorder card up within its column (Cmd+Up)
+    case reorderCardUp(cardTitle: String)
+
+    /// Reorder card down within its column (Cmd+Down)
+    case reorderCardDown(cardTitle: String)
+
+    /// Move card to previous column (Cmd+Left)
+    case moveCardToPreviousColumn(cardTitle: String)
+
+    /// Move card to next column (Cmd+Right)
+    case moveCardToNextColumn(cardTitle: String)
+
+    /// Extend selection up to include the previous card (Shift+Up)
+    case extendSelectionUp(toCardTitle: String)
+
+    /// Extend selection down to include the next card (Shift+Down)
+    case extendSelectionDown(toCardTitle: String)
+
+    /// Toggle card in/out of multi-selection (Space bar)
+    case toggleCardInSelection(cardTitle: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -154,6 +190,201 @@ class KeyboardNavigationController {
         return navigateHorizontally(currentSelection: currentSelection, direction: direction)
     }
 
+    /// Handles Home key press.
+    ///
+    /// Jumps to the first card in the current column.
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleHome(currentSelection: String?) -> NavigationResult {
+        // Find which column to navigate in
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        guard let firstCard = columnCards.first else {
+            return .none
+        }
+
+        // Don't change selection if already at first card
+        if firstCard.title == currentSelection {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: firstCard.title)
+    }
+
+    /// Handles End key press.
+    ///
+    /// Jumps to the last card in the current column.
+    /// If no card is selected, selects the last card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleEnd(currentSelection: String?) -> NavigationResult {
+        // Find which column to navigate in
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        guard let lastCard = columnCards.last else {
+            return .none
+        }
+
+        // Don't change selection if already at last card
+        if lastCard.title == currentSelection {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: lastCard.title)
+    }
+
+    /// Number of cards to jump when using Option+Up/Down page navigation.
+    private let pageJumpSize: Int = 5
+
+    /// Handles Option+Up arrow key press.
+    ///
+    /// Jumps up multiple cards (page-like navigation).
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleOptionArrowUp(currentSelection: String?) -> NavigationResult {
+        // No selection - select first card
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return selectFirstCard()
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Jump up by pageJumpSize, but don't go below 0
+        let newIndex: Int = max(0, currentIndex - pageJumpSize)
+
+        // Already at or near top
+        if newIndex == currentIndex {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: columnCards[newIndex].title)
+    }
+
+    /// Handles Option+Down arrow key press.
+    ///
+    /// Jumps down multiple cards (page-like navigation).
+    /// If no card is selected, selects the first card in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleOptionArrowDown(currentSelection: String?) -> NavigationResult {
+        // No selection - select first card
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return selectFirstCard()
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Jump down by pageJumpSize, but don't exceed array bounds
+        let newIndex: Int = min(columnCards.count - 1, currentIndex + pageJumpSize)
+
+        // Already at or near bottom
+        if newIndex == currentIndex {
+            return .none
+        }
+
+        return .selectionChanged(cardTitle: columnCards[newIndex].title)
+    }
+
+    /// Handles Shift+Up arrow key press.
+    ///
+    /// Extends the selection to include the previous card.
+    /// If no card is selected, behaves like regular arrow up.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleShiftArrowUp(currentSelection: String?) -> NavigationResult {
+        // No selection - act like regular arrow up
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return handleArrowUp(currentSelection: currentSelection)
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Can't extend up if already at top
+        if currentIndex == 0 {
+            return .none
+        }
+
+        // Return the card to extend selection to
+        let previousCard: Card = columnCards[currentIndex - 1]
+        return .extendSelectionUp(toCardTitle: previousCard.title)
+    }
+
+    /// Handles Shift+Down arrow key press.
+    ///
+    /// Extends the selection to include the next card.
+    /// If no card is selected, behaves like regular arrow down.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleShiftArrowDown(currentSelection: String?) -> NavigationResult {
+        // No selection - act like regular arrow down
+        guard let currentTitle = currentSelection,
+              let currentCard = layoutProvider.card(withTitle: currentTitle) else {
+            return handleArrowDown(currentSelection: currentSelection)
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: currentCard.column)
+
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == currentTitle }) else {
+            return .none
+        }
+
+        // Can't extend down if already at bottom
+        if currentIndex >= columnCards.count - 1 {
+            return .none
+        }
+
+        // Return the card to extend selection to
+        let nextCard: Card = columnCards[currentIndex + 1]
+        return .extendSelectionDown(toCardTitle: nextCard.title)
+    }
+
     // MARK: - Action Keys
 
     /// Handles Enter/Return key press.
@@ -211,6 +442,37 @@ class KeyboardNavigationController {
         return .none
     }
 
+    /// Handles Cmd+A key press.
+    ///
+    /// Selects all cards in the column containing the currently selected card.
+    /// If no card is selected, selects all cards in the first non-empty column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result with all card titles in the column
+    func handleSelectAll(currentSelection: String?) -> NavigationResult {
+        // Find which column to select all from
+        let columnID: String?
+        if let currentTitle = currentSelection,
+           let currentCard = layoutProvider.card(withTitle: currentTitle) {
+            columnID = currentCard.column
+        } else {
+            // No selection - use first non-empty column
+            columnID = layoutProvider.columns.first { !layoutProvider.cards(forColumn: $0.id).isEmpty }?.id
+        }
+
+        guard let columnID = columnID else {
+            return .none
+        }
+
+        let columnCards: [Card] = layoutProvider.cards(forColumn: columnID)
+        if columnCards.isEmpty {
+            return .none
+        }
+
+        let cardTitles: Set<String> = Set(columnCards.map { $0.title })
+        return .selectAllInColumn(cardTitles: cardTitles)
+    }
+
     /// Handles Cmd+Number key press (Cmd+1, Cmd+2, etc.).
     ///
     /// Moves the currently selected card to the specified column.
@@ -237,6 +499,130 @@ class KeyboardNavigationController {
         }
 
         return .moveCard(cardTitle: title, toColumnIndex: columnIndex)
+    }
+
+    /// Handles Cmd+Up arrow key press.
+    ///
+    /// Moves the selected card up one position within its column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowUp(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Get cards in the column to check if we can move up
+        let columnCards: [Card] = layoutProvider.cards(forColumn: card.column)
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == title }) else {
+            return .none
+        }
+
+        // Can't move up if already at top
+        if currentIndex == 0 {
+            return .none
+        }
+
+        return .reorderCardUp(cardTitle: title)
+    }
+
+    /// Handles Cmd+Down arrow key press.
+    ///
+    /// Moves the selected card down one position within its column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowDown(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Get cards in the column to check if we can move down
+        let columnCards: [Card] = layoutProvider.cards(forColumn: card.column)
+        guard let currentIndex = columnCards.firstIndex(where: { $0.title == title }) else {
+            return .none
+        }
+
+        // Can't move down if already at bottom
+        if currentIndex >= columnCards.count - 1 {
+            return .none
+        }
+
+        return .reorderCardDown(cardTitle: title)
+    }
+
+    /// Handles Cmd+Left arrow key press.
+    ///
+    /// Moves the selected card to the previous column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowLeft(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Find current column index
+        guard let currentColumnIndex = layoutProvider.columns.firstIndex(where: { $0.id == card.column }) else {
+            return .none
+        }
+
+        // Can't move left if already in first column
+        if currentColumnIndex == 0 {
+            return .none
+        }
+
+        return .moveCardToPreviousColumn(cardTitle: title)
+    }
+
+    /// Handles Cmd+Right arrow key press.
+    ///
+    /// Moves the selected card to the next column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowRight(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Find current column index
+        guard let currentColumnIndex = layoutProvider.columns.firstIndex(where: { $0.id == card.column }) else {
+            return .none
+        }
+
+        // Can't move right if already in last column
+        if currentColumnIndex >= layoutProvider.columns.count - 1 {
+            return .none
+        }
+
+        return .moveCardToNextColumn(cardTitle: title)
+    }
+
+    /// Handles Space bar key press.
+    ///
+    /// Toggles the currently selected card in/out of the multi-selection.
+    /// This allows keyboard-driven multi-select similar to Cmd+Click but more ergonomic.
+    /// If no card is currently selected, selects the first card.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating to toggle the card in selection
+    func handleSpace(currentSelection: String?) -> NavigationResult {
+        // If there's no selection, select the first card
+        guard let title = currentSelection else {
+            return selectFirstCard()
+        }
+
+        // Verify the card exists
+        guard layoutProvider.card(withTitle: title) != nil else {
+            return selectFirstCard()
+        }
+
+        return .toggleCardInSelection(cardTitle: title)
     }
 
     // MARK: - Private Navigation Helpers
