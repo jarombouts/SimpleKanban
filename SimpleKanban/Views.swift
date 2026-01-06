@@ -289,6 +289,11 @@ struct BoardView: View {
                     editingCard = nil
                     selectedCardTitles.remove(card.title)
                 },
+                onOpenSettings: {
+                    // Dismiss edit card sheet and open settings
+                    editingCard = nil
+                    showBoardSettings = true
+                },
                 onCancel: {
                     editingCard = nil
                 }
@@ -297,9 +302,10 @@ struct BoardView: View {
         .sheet(item: $addingCardToColumn) { columnID in
             NewCardView(
                 columnID: columnID,
-                onSave: { title, column, body in
+                labels: store.board.labels,
+                onSave: { title, column, body, labels in
                     do {
-                        try store.addCard(title: title, toColumn: column, body: body)
+                        try store.addCard(title: title, toColumn: column, body: body, labels: labels)
                         addingCardToColumn = nil
                         // Select the newly created card
                         selectSingle(title)
@@ -308,6 +314,11 @@ struct BoardView: View {
                         print("ERROR: Failed to create card '\(title)': \(error)")
                         addingCardToColumn = nil
                     }
+                },
+                onOpenSettings: {
+                    // Dismiss new card sheet and open settings
+                    addingCardToColumn = nil
+                    showBoardSettings = true
                 },
                 onCancel: {
                     addingCardToColumn = nil
@@ -880,6 +891,7 @@ struct CardDetailView: View {
     let labels: [CardLabel]
     let onSave: (Card) -> Void
     let onDelete: () -> Void
+    let onOpenSettings: () -> Void
     let onCancel: () -> Void
 
     @State private var editedCard: Card
@@ -887,11 +899,13 @@ struct CardDetailView: View {
     init(card: Card, labels: [CardLabel],
          onSave: @escaping (Card) -> Void,
          onDelete: @escaping () -> Void,
+         onOpenSettings: @escaping () -> Void,
          onCancel: @escaping () -> Void) {
         self.card = card
         self.labels = labels
         self.onSave = onSave
         self.onDelete = onDelete
+        self.onOpenSettings = onOpenSettings
         self.onCancel = onCancel
         self._editedCard = State(initialValue: card)
     }
@@ -926,23 +940,31 @@ struct CardDetailView: View {
                         .font(.title3)
                 }
 
-                if !labels.isEmpty {
-                    Section("Labels") {
-                        FlowLayout(spacing: 8) {
-                            ForEach(labels, id: \.id) { label in
-                                LabelToggle(
-                                    label: label,
-                                    isSelected: editedCard.labels.contains(label.id),
-                                    onToggle: {
-                                        if editedCard.labels.contains(label.id) {
-                                            editedCard.labels.removeAll { $0 == label.id }
-                                        } else {
-                                            editedCard.labels.append(label.id)
-                                        }
+                Section("Labels") {
+                    FlowLayout(spacing: 8) {
+                        ForEach(labels, id: \.id) { label in
+                            LabelToggle(
+                                label: label,
+                                isSelected: editedCard.labels.contains(label.id),
+                                onToggle: {
+                                    if editedCard.labels.contains(label.id) {
+                                        editedCard.labels.removeAll { $0 == label.id }
+                                    } else {
+                                        editedCard.labels.append(label.id)
                                     }
-                                )
-                            }
+                                }
+                            )
                         }
+                        // Button to open settings and add new labels
+                        Button {
+                            onOpenSettings()
+                        } label: {
+                            Image(systemName: "plus.circle")
+                                .font(.system(size: 14))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Manage labels in settings")
                     }
                 }
 
@@ -1009,11 +1031,14 @@ struct LabelToggle: View {
 /// show the column at all - it's obvious from context.
 struct NewCardView: View {
     let columnID: String
-    let onSave: (String, String, String) -> Void
+    let labels: [CardLabel]
+    let onSave: (String, String, String, [String]) -> Void
+    let onOpenSettings: () -> Void
     let onCancel: () -> Void
 
     @State private var title: String = ""
     @State private var cardBody: String = ""
+    @State private var selectedLabels: [String] = []
     @FocusState private var isTitleFocused: Bool
 
     // Modal size constraints
@@ -1045,7 +1070,7 @@ struct NewCardView: View {
                     Spacer()
 
                     // Use columnID directly - no state involved, no timing issues
-                    Button("Create") { onSave(title, columnID, cardBody) }
+                    Button("Create") { onSave(title, columnID, cardBody, selectedLabels) }
                         .keyboardShortcut(.return)
                         .disabled(title.isEmpty)
                 }
@@ -1060,6 +1085,34 @@ struct NewCardView: View {
                             .textFieldStyle(.plain)
                             .font(.title3)
                             .focused($isTitleFocused)
+                    }
+
+                    Section("Labels") {
+                        FlowLayout(spacing: 8) {
+                            ForEach(labels, id: \.id) { label in
+                                LabelToggle(
+                                    label: label,
+                                    isSelected: selectedLabels.contains(label.id),
+                                    onToggle: {
+                                        if selectedLabels.contains(label.id) {
+                                            selectedLabels.removeAll { $0 == label.id }
+                                        } else {
+                                            selectedLabels.append(label.id)
+                                        }
+                                    }
+                                )
+                            }
+                            // Button to open settings and add new labels
+                            Button {
+                                onOpenSettings()
+                            } label: {
+                                Image(systemName: "plus.circle")
+                                    .font(.system(size: 14))
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Manage labels in settings")
+                        }
                     }
 
                     Section("Description (optional)") {

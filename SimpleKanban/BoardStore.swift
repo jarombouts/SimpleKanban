@@ -97,8 +97,9 @@ public final class BoardStore: @unchecked Sendable {
     ///   - title: The card title (must be unique)
     ///   - columnID: The column to add the card to
     ///   - body: Optional card body content
+    ///   - labels: Optional array of label IDs to assign to the card
     /// - Throws: CardWriterError.duplicateTitle if title already exists
-    public func addCard(title: String, toColumn columnID: String, body: String = "") throws {
+    public func addCard(title: String, toColumn columnID: String, body: String = "", labels: [String] = []) throws {
         // Fast path: check for duplicate title in memory first
         // This catches duplicates immediately without disk I/O, and serves as a
         // belt-and-suspenders check alongside CardWriter's file-based check
@@ -124,7 +125,7 @@ public final class BoardStore: @unchecked Sendable {
             position: position,
             created: Date(),
             modified: Date(),
-            labels: [],
+            labels: labels,
             body: finalBody
         )
 
