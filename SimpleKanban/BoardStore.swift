@@ -343,10 +343,29 @@ public final class BoardStore: @unchecked Sendable {
     /// Removes a column from the board.
     ///
     /// - Parameter columnID: The column ID to remove
-    /// - Note: Does not delete cards in that column; they become orphaned
+    /// - Note: Also attempts to delete the column's directory if it exists and is empty.
+    ///         Logs a warning if the directory is not empty.
     public func removeColumn(_ columnID: String) throws {
         board.columns.removeAll { $0.id == columnID }
         try BoardWriter.save(board, in: url)
+
+        // Try to delete the column's directory if it exists and is empty
+        let columnDir: URL = url.appendingPathComponent("cards/\(columnID)")
+        let fileManager: FileManager = FileManager.default
+
+        if fileManager.fileExists(atPath: columnDir.path) {
+            do {
+                let contents: [String] = try fileManager.contentsOfDirectory(atPath: columnDir.path)
+                if contents.isEmpty {
+                    try fileManager.removeItem(at: columnDir)
+                } else {
+                    print("Warning: Could not delete \(columnDir.lastPathComponent). Not empty.")
+                }
+            } catch {
+                // Directory access failed, just log and continue
+                print("Warning: Could not access \(columnDir.lastPathComponent): \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Updates a column's display name.
