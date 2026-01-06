@@ -32,6 +32,11 @@ import Observation
 /// The store also manages search/filter state. Use `searchText` and `filterLabels`
 /// to filter which cards are displayed. Use `filteredCards(forColumn:)` to get
 /// the filtered list instead of `cards(forColumn:)`.
+///
+/// Undo/Redo:
+/// The store integrates with macOS's UndoManager to support undo/redo for all
+/// card operations. Set the `undoManager` property to enable undo support.
+/// Operations are automatically registered with descriptive action names.
 @Observable
 public final class BoardStore: @unchecked Sendable {
     // Note: @unchecked Sendable because we're using @Observable which isn't
@@ -46,6 +51,10 @@ public final class BoardStore: @unchecked Sendable {
 
     /// The directory URL where the board is stored.
     public let url: URL
+
+    /// The undo manager for this board. Set by the view to enable undo/redo.
+    /// When nil, operations are not undoable.
+    public var undoManager: UndoManager?
 
     // MARK: - Search and Filter State
 
@@ -234,6 +243,29 @@ public final class BoardStore: @unchecked Sendable {
         // Update in-memory state
         cards.append(card)
         sortCards()
+
+        // Register undo action: delete the card we just created
+        registerUndoForAddCard(card)
+    }
+
+    /// Registers an undo action for adding a card.
+    /// Undo will delete the card; redo will re-create it.
+    private func registerUndoForAddCard(_ card: Card) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: delete the card (silently, since it was just created)
+            try? CardWriter.delete(card, in: store.url)
+            store.cards.removeAll { $0.title == card.title }
+
+            // Register redo: re-add the card
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                try? CardWriter.save(card, in: store.url, isNew: true)
+                store.cards.append(card)
+                store.sortCards()
+                store.registerUndoForAddCard(card)
+            }
+            store.undoManager?.setActionName("Add Card")
+        }
+        undoManager?.setActionName("Add Card")
     }
 
     /// Updates a card's title.
@@ -300,8 +332,10 @@ public final class BoardStore: @unchecked Sendable {
             return
         }
 
-        // Track old column for file move
-        let oldColumn: String = cards[cardIndex].column
+        // Capture original state for undo
+        let originalCard: Card = cards[cardIndex]
+        let oldColumn: String = originalCard.column
+        let oldPosition: String = originalCard.position
 
         // Calculate new position
         let targetColumnCards: [Card] = cards(forColumn: columnID)
@@ -346,22 +380,111 @@ public final class BoardStore: @unchecked Sendable {
         // Pass previousColumn so CardWriter knows to move the file
         try CardWriter.save(cards[cardIndex], in: url, previousColumn: oldColumn)
         sortCards()
+
+        // Register undo action: move back to original column and position
+        registerUndoForMoveCard(card.title, fromColumn: oldColumn, fromPosition: oldPosition, toColumn: columnID, toPosition: newPosition)
+    }
+
+    /// Registers an undo action for moving a card.
+    /// Undo will restore the card to its original column and position.
+    private func registerUndoForMoveCard(_ cardTitle: String, fromColumn: String, fromPosition: String, toColumn: String, toPosition: String) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: move card back to original column with original position
+            guard let cardIndex = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+
+            let currentColumn: String = store.cards[cardIndex].column
+            store.cards[cardIndex].column = fromColumn
+            store.cards[cardIndex].position = fromPosition
+            store.cards[cardIndex].modified = Date()
+
+            try? CardWriter.save(store.cards[cardIndex], in: store.url, previousColumn: currentColumn)
+            store.sortCards()
+
+            // Register redo: move to new column again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                guard let cardIndex = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+
+                let currentColumn: String = store.cards[cardIndex].column
+                store.cards[cardIndex].column = toColumn
+                store.cards[cardIndex].position = toPosition
+                store.cards[cardIndex].modified = Date()
+
+                try? CardWriter.save(store.cards[cardIndex], in: store.url, previousColumn: currentColumn)
+                store.sortCards()
+
+                store.registerUndoForMoveCard(cardTitle, fromColumn: fromColumn, fromPosition: fromPosition, toColumn: toColumn, toPosition: toPosition)
+            }
+            store.undoManager?.setActionName("Move Card")
+        }
+        undoManager?.setActionName("Move Card")
     }
 
     /// Deletes a card permanently.
     ///
     /// - Parameter card: The card to delete
     public func deleteCard(_ card: Card) throws {
+        // Capture card state before deletion for undo
+        let cardToRestore: Card = card
+
         try CardWriter.delete(card, in: url)
         cards.removeAll { $0.title == card.title }
+
+        // Register undo action: restore the deleted card
+        registerUndoForDeleteCard(cardToRestore)
+    }
+
+    /// Registers an undo action for deleting a card.
+    /// Undo will restore the card; redo will delete it again.
+    private func registerUndoForDeleteCard(_ card: Card) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore the card
+            try? CardWriter.save(card, in: store.url, isNew: true)
+            store.cards.append(card)
+            store.sortCards()
+
+            // Register redo: delete the card again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                try? CardWriter.delete(card, in: store.url)
+                store.cards.removeAll { $0.title == card.title }
+                store.registerUndoForDeleteCard(card)
+            }
+            store.undoManager?.setActionName("Delete Card")
+        }
+        undoManager?.setActionName("Delete Card")
     }
 
     /// Archives a card (moves to archive folder with date prefix).
     ///
     /// - Parameter card: The card to archive
     public func archiveCard(_ card: Card) throws {
-        try CardWriter.archive(card, in: url)
+        // Capture card state and archive path for undo
+        let cardToRestore: Card = card
+        let archivePath: URL = try CardWriter.archive(card, in: url)
         cards.removeAll { $0.title == card.title }
+
+        // Register undo action: unarchive the card
+        registerUndoForArchiveCard(cardToRestore, archivePath: archivePath)
+    }
+
+    /// Registers an undo action for archiving a card.
+    /// Undo will restore the card from archive; redo will archive it again.
+    private func registerUndoForArchiveCard(_ card: Card, archivePath: URL) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: move card back from archive to its original column
+            try? CardWriter.unarchive(from: archivePath, card: card, in: store.url)
+            store.cards.append(card)
+            store.sortCards()
+
+            // Register redo: archive the card again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                if let newArchivePath = try? CardWriter.archive(card, in: store.url) {
+                    store.cards.removeAll { $0.title == card.title }
+                    store.registerUndoForArchiveCard(card, archivePath: newArchivePath)
+                }
+            }
+            store.undoManager?.setActionName("Archive Card")
+        }
+        undoManager?.setActionName("Archive Card")
     }
 
     // MARK: - Card Duplication
@@ -420,7 +543,30 @@ public final class BoardStore: @unchecked Sendable {
         cards.append(duplicate)
         sortCards()
 
+        // Register undo action: delete the duplicate
+        registerUndoForDuplicateCard(duplicate)
+
         return duplicate
+    }
+
+    /// Registers an undo action for duplicating a card.
+    /// Undo will delete the duplicate; redo will re-create it.
+    private func registerUndoForDuplicateCard(_ duplicate: Card) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: delete the duplicate
+            try? CardWriter.delete(duplicate, in: store.url)
+            store.cards.removeAll { $0.title == duplicate.title }
+
+            // Register redo: re-create the duplicate
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                try? CardWriter.save(duplicate, in: store.url, isNew: true)
+                store.cards.append(duplicate)
+                store.sortCards()
+                store.registerUndoForDuplicateCard(duplicate)
+            }
+            store.undoManager?.setActionName("Duplicate Card")
+        }
+        undoManager?.setActionName("Duplicate Card")
     }
 
     /// Duplicates multiple cards, creating copies in their respective columns.
@@ -507,37 +653,124 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Archives multiple cards.
     /// Cards are archived in order to maintain consistent filesystem state.
+    /// The entire operation is registered as a single undoable action.
     ///
     /// - Parameter cards: The cards to archive
     /// - Returns: Number of cards successfully archived
     @discardableResult
     public func archiveCards(_ cardsToArchive: [Card]) throws -> Int {
+        // Capture card states and archive paths for undo
+        var archivedInfo: [(card: Card, archivePath: URL)] = []
+
+        // Group all operations as one undoable action
+        undoManager?.beginUndoGrouping()
+
         var archived: Int = 0
         for card in cardsToArchive {
-            try CardWriter.archive(card, in: url)
+            let archivePath: URL = try CardWriter.archive(card, in: url)
+            archivedInfo.append((card: card, archivePath: archivePath))
             cards.removeAll { $0.title == card.title }
             archived += 1
         }
+
+        undoManager?.endUndoGrouping()
+
+        // Register undo for the bulk operation
+        registerUndoForBulkArchive(archivedInfo)
+
         return archived
     }
 
+    /// Registers an undo action for bulk archive.
+    /// Undo will restore all archived cards; redo will archive them again.
+    private func registerUndoForBulkArchive(_ archivedInfo: [(card: Card, archivePath: URL)]) {
+        guard !archivedInfo.isEmpty else { return }
+
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore all archived cards
+            for info in archivedInfo {
+                try? CardWriter.unarchive(from: info.archivePath, card: info.card, in: store.url)
+                store.cards.append(info.card)
+            }
+            store.sortCards()
+
+            // Register redo: archive all cards again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                var newArchivedInfo: [(card: Card, archivePath: URL)] = []
+                for info in archivedInfo {
+                    if let archivePath = try? CardWriter.archive(info.card, in: store.url) {
+                        newArchivedInfo.append((card: info.card, archivePath: archivePath))
+                        store.cards.removeAll { $0.title == info.card.title }
+                    }
+                }
+                store.registerUndoForBulkArchive(newArchivedInfo)
+            }
+            store.undoManager?.setActionName("Archive \(archivedInfo.count) Cards")
+        }
+
+        let actionName: String = archivedInfo.count == 1 ? "Archive Card" : "Archive \(archivedInfo.count) Cards"
+        undoManager?.setActionName(actionName)
+    }
+
     /// Deletes multiple cards permanently.
+    /// The entire operation is registered as a single undoable action.
     ///
     /// - Parameter cards: The cards to delete
     /// - Returns: Number of cards successfully deleted
     @discardableResult
     public func deleteCards(_ cardsToDelete: [Card]) throws -> Int {
+        // Capture card states for undo
+        let cardsToRestore: [Card] = cardsToDelete
+
+        // Group all operations as one undoable action
+        undoManager?.beginUndoGrouping()
+
         var deleted: Int = 0
         for card in cardsToDelete {
             try CardWriter.delete(card, in: url)
             cards.removeAll { $0.title == card.title }
             deleted += 1
         }
+
+        undoManager?.endUndoGrouping()
+
+        // Register undo for the bulk operation
+        registerUndoForBulkDelete(cardsToRestore)
+
         return deleted
+    }
+
+    /// Registers an undo action for bulk delete.
+    /// Undo will restore all deleted cards; redo will delete them again.
+    private func registerUndoForBulkDelete(_ deletedCards: [Card]) {
+        guard !deletedCards.isEmpty else { return }
+
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore all deleted cards
+            for card in deletedCards {
+                try? CardWriter.save(card, in: store.url, isNew: true)
+                store.cards.append(card)
+            }
+            store.sortCards()
+
+            // Register redo: delete all cards again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                for card in deletedCards {
+                    try? CardWriter.delete(card, in: store.url)
+                    store.cards.removeAll { $0.title == card.title }
+                }
+                store.registerUndoForBulkDelete(deletedCards)
+            }
+            store.undoManager?.setActionName("Delete \(deletedCards.count) Cards")
+        }
+
+        let actionName: String = deletedCards.count == 1 ? "Delete Card" : "Delete \(deletedCards.count) Cards"
+        undoManager?.setActionName(actionName)
     }
 
     /// Moves multiple cards to a different column.
     /// Cards are appended to the end of the target column in their current order.
+    /// The entire operation is registered as a single undoable action.
     ///
     /// - Parameters:
     ///   - cards: The cards to move
@@ -545,17 +778,120 @@ public final class BoardStore: @unchecked Sendable {
     /// - Returns: Number of cards successfully moved
     @discardableResult
     public func moveCards(_ cardsToMove: [Card], toColumn columnID: String) throws -> Int {
-        var moved: Int = 0
+        // Capture original states for undo
+        var moveInfo: [(title: String, fromColumn: String, fromPosition: String)] = []
+
         // Sort cards by current position to maintain relative order
         let sortedCards: [Card] = cardsToMove.sorted { $0.position < $1.position }
 
+        // Filter to cards that will actually move
+        let cardsToActuallyMove: [Card] = sortedCards.filter { $0.column != columnID }
+
+        // Capture original states before moving
+        for card in cardsToActuallyMove {
+            moveInfo.append((title: card.title, fromColumn: card.column, fromPosition: card.position))
+        }
+
+        // Group all operations as one undoable action
+        undoManager?.beginUndoGrouping()
+
+        var moved: Int = 0
         for card in sortedCards {
             // Skip if already in target column
             guard card.column != columnID else { continue }
-            try moveCard(card, toColumn: columnID, atIndex: nil)
+            // Call internal move without undo registration (we'll do bulk undo)
+            try moveCardWithoutUndo(card, toColumn: columnID, atIndex: nil)
             moved += 1
         }
+
+        undoManager?.endUndoGrouping()
+
+        // Register undo for the bulk operation
+        registerUndoForBulkMove(moveInfo, toColumn: columnID)
+
         return moved
+    }
+
+    /// Internal move card without undo registration (used for bulk moves).
+    private func moveCardWithoutUndo(_ card: Card, toColumn columnID: String, atIndex index: Int? = nil) throws {
+        guard let cardIndex = cards.firstIndex(where: { $0.title == card.title }) else {
+            return
+        }
+
+        let oldColumn: String = cards[cardIndex].column
+
+        // Calculate new position
+        let targetColumnCards: [Card] = cards(forColumn: columnID)
+            .filter { $0.title != card.title }
+        let newPosition: String
+
+        if let targetIndex = index {
+            if targetIndex == 0 {
+                if let firstCard = targetColumnCards.first {
+                    newPosition = LexPosition.before(firstCard.position)
+                } else {
+                    newPosition = LexPosition.first()
+                }
+            } else if targetIndex >= targetColumnCards.count {
+                if let lastCard = targetColumnCards.last {
+                    newPosition = LexPosition.after(lastCard.position)
+                } else {
+                    newPosition = LexPosition.first()
+                }
+            } else {
+                let before: Card = targetColumnCards[targetIndex - 1]
+                let after: Card = targetColumnCards[targetIndex]
+                newPosition = LexPosition.between(before.position, and: after.position)
+            }
+        } else {
+            if let lastCard = targetColumnCards.last {
+                newPosition = LexPosition.after(lastCard.position)
+            } else {
+                newPosition = LexPosition.first()
+            }
+        }
+
+        cards[cardIndex].column = columnID
+        cards[cardIndex].position = newPosition
+        cards[cardIndex].modified = Date()
+
+        try CardWriter.save(cards[cardIndex], in: url, previousColumn: oldColumn)
+        sortCards()
+    }
+
+    /// Registers an undo action for bulk move.
+    /// Undo will restore all cards to their original columns and positions.
+    private func registerUndoForBulkMove(_ moveInfo: [(title: String, fromColumn: String, fromPosition: String)], toColumn: String) {
+        guard !moveInfo.isEmpty else { return }
+
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: move all cards back to original columns
+            for info in moveInfo {
+                guard let cardIndex = store.cards.firstIndex(where: { $0.title == info.title }) else { continue }
+
+                let currentColumn: String = store.cards[cardIndex].column
+                store.cards[cardIndex].column = info.fromColumn
+                store.cards[cardIndex].position = info.fromPosition
+                store.cards[cardIndex].modified = Date()
+
+                try? CardWriter.save(store.cards[cardIndex], in: store.url, previousColumn: currentColumn)
+            }
+            store.sortCards()
+
+            // Register redo: move to target column again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                for info in moveInfo {
+                    if let card = store.card(withTitle: info.title) {
+                        try? store.moveCardWithoutUndo(card, toColumn: toColumn, atIndex: nil)
+                    }
+                }
+                store.registerUndoForBulkMove(moveInfo, toColumn: toColumn)
+            }
+            store.undoManager?.setActionName("Move \(moveInfo.count) Cards")
+        }
+
+        let actionName: String = moveInfo.count == 1 ? "Move Card" : "Move \(moveInfo.count) Cards"
+        undoManager?.setActionName(actionName)
     }
 
     // MARK: - Board Mutations

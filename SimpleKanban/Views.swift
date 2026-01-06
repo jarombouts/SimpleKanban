@@ -39,6 +39,10 @@ struct BoardView: View {
     /// Git sync handler for the board (nil if not a git repo or not initialized)
     var gitSync: GitSync?
 
+    /// Environment undo manager for Edit menu integration.
+    /// This is provided by SwiftUI and automatically integrates with the Edit menu.
+    @Environment(\.undoManager) private var undoManager
+
     /// Card currently open in the detail editor sheet
     @State private var editingCard: Card? = nil
 
@@ -285,6 +289,12 @@ struct BoardView: View {
             .onAppear {
                 // Auto-focus the board when it appears
                 isBoardFocused = true
+                // Connect the environment undo manager to the store for undo/redo support
+                store.undoManager = undoManager
+            }
+            .onChange(of: undoManager) { _, newValue in
+                // Keep undo manager in sync if environment changes
+                store.undoManager = newValue
             }
             .onKeyPress { keyPress in
                 handleKeyPress(keyPress)
