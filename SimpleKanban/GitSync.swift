@@ -362,10 +362,13 @@ public final class GitSync: @unchecked Sendable {
         var files: [(status: String, file: String)] = []
         let lines: [String] = result.output.components(separatedBy: "\n")
         for line in lines {
-            let trimmed: String = line.trimmingCharacters(in: .whitespaces)
-            guard trimmed.count > 2 else { continue }
-            let statusCode: String = String(trimmed.prefix(2)).trimmingCharacters(in: .whitespaces)
-            let filename: String = String(trimmed.dropFirst(3))
+            // Git porcelain format: XY filename (2-char status + space + filename)
+            // Don't trim the line first - it corrupts the fixed-width format
+            guard line.count > 3 else { continue }
+            // Status code is first 2 chars (trim whitespace to normalize " M" → "M")
+            let statusCode: String = String(line.prefix(2)).trimmingCharacters(in: .whitespaces)
+            // Filename starts at position 3
+            let filename: String = String(line.dropFirst(3))
             if !filename.isEmpty {
                 files.append((status: statusCode, file: filename))
             }
@@ -515,7 +518,7 @@ public final class GitSync: @unchecked Sendable {
 // MARK: - GitSyncError
 
 /// Errors that can occur during git operations.
-public enum GitSyncError: Error, LocalizedError {
+public enum GitSyncError: Error, LocalizedError, Equatable {
     case notRepository
     case noBranch
     case stashFailed
