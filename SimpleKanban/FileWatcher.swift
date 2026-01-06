@@ -196,11 +196,17 @@ public final class FileWatcher: @unchecked Sendable {
             pendingBoardChange = true
             scheduleDebounce()
         } else if relativePath.hasPrefix("cards/") && changedURL.pathExtension == "md" {
+            // Skip atomic write temp files (they have patterns like .md.sb-{random} or similar)
+            // Also skip any file with a dot in the name before .md (like "file.tmp.md")
+            let filename: String = changedURL.deletingPathExtension().lastPathComponent
+            guard !filename.contains(".") && !filename.isEmpty else {
+                return
+            }
+
             // Card file changed
             if isRemoved {
                 // File was deleted - track the slug for removal
-                let slug: String = changedURL.deletingPathExtension().lastPathComponent
-                pendingDeletedSlugs.insert(slug)
+                pendingDeletedSlugs.insert(filename)
             } else {
                 // File was created or modified - track for reload
                 pendingChangedFiles.insert(changedURL)
@@ -263,21 +269,9 @@ extension BoardStore {
         watcher.onCardsChanged = { [weak self] changedURLs, deletedSlugs in
             guard let self = self else { return }
 
-            // Handle deletions first - only remove cards whose files were explicitly deleted
-            for slug in deletedSlugs {
-                // Verify the file is actually gone before removing
-                // (FSEvents can sometimes report phantom deletes)
-                let possiblePaths: [URL] = self.board.columns.map { column in
-                    self.url.appendingPathComponent("cards/\(column.id)/\(slug).md")
-                }
-                let stillExists: Bool = possiblePaths.contains { FileManager.default.fileExists(atPath: $0.path) }
-
-                if !stillExists {
-                    self.removeCard(bySlug: slug)
-                }
-            }
-
-            // Handle creates and modifications
+            // Handle creates and modifications FIRST (before deletions)
+            // This prevents a race where a newly created card could be removed
+            // if FSEvents reports both delete and create for atomic writes
             for changedURL in changedURLs {
                 let filename: String = changedURL.deletingPathExtension().lastPathComponent
 
@@ -307,6 +301,28 @@ extension BoardStore {
                     } catch {
                         // File might be invalid or still being written, just log and skip
                         print("FileWatcher: Error loading new card \(filename): \(error)")
+                    }
+                }
+            }
+
+            // Handle deletions AFTER creates/modifications
+            // This ensures we don't accidentally remove a card that was just created
+            for slug in deletedSlugs {
+                // Verify the file is actually gone before removing
+                // (FSEvents can sometimes report phantom deletes)
+                let possiblePaths: [URL] = self.board.columns.map { column in
+                    self.url.appendingPathComponent("cards/\(column.id)/\(slug).md")
+                }
+                let stillExists: Bool = possiblePaths.contains { FileManager.default.fileExists(atPath: $0.path) }
+
+                if !stillExists {
+                    // Double-check: only remove if the card isn't in the changedURLs
+                    // (which would mean it was just created/modified)
+                    let wasJustChanged: Bool = changedURLs.contains { url in
+                        url.deletingPathExtension().lastPathComponent == slug
+                    }
+                    if !wasJustChanged {
+                        self.removeCard(bySlug: slug)
                     }
                 }
             }

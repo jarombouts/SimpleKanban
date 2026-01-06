@@ -1,6 +1,6 @@
 # SimpleKanban
 
-A native macOS Kanban board that stores everything as plain markdown files — perfect for git-based workflows.
+A native macOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
@@ -10,10 +10,10 @@ A native macOS Kanban board that stores everything as plain markdown files — p
 
 Most Kanban tools lock your data in proprietary formats or cloud services. SimpleKanban takes a different approach:
 
-- **Plain markdown files** — Your cards are just `.md` files you can read, edit, and grep from the terminal
-- **Git-friendly** — One file per card means minimal merge conflicts when collaborating
-- **No cloud required** — Everything lives in a folder you control
-- **No dependencies** — Pure Swift/SwiftUI, no external libraries
+- **Plain markdown files** -- Your cards are just `.md` files you can read, edit, and grep from the terminal
+- **Git-friendly** -- One file per card means minimal merge conflicts when collaborating
+- **No cloud required** -- Everything lives in a folder you control
+- **No dependencies** -- Pure Swift/SwiftUI, no external libraries
 
 ## Installation
 
@@ -157,7 +157,7 @@ git pull --rebase
 git push
 ```
 
-The lexicographic position system (`position: n`, `position: q`, etc.) means inserting cards doesn't renumber existing ones — keeping your git diffs clean.
+The lexicographic position system (`position: n`, `position: q`, etc.) means inserting cards doesn't renumber existing ones -- keeping your git diffs clean.
 
 ## For Developers
 
@@ -203,6 +203,6 @@ All contributions welcome!
 
 ## License
 
-[WTFPL](LICENSE) — Do What The Fuck You Want To Public License.
+[WTFPL](LICENSE) -- Do What The Fuck You Want To Public License.
 
 Made with caffeine in The Netherlands by [Strange Loop Software](https://github.com/jarombouts).

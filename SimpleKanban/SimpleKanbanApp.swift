@@ -623,6 +623,12 @@ struct SimpleKanbanApp: App {
             if window.delegate !== appDelegate {
                 window.delegate = appDelegate
             }
+
+            // Set toolbar display mode to "Icon and Text" by default
+            // This makes buttons more discoverable for new users
+            if let toolbar = window.toolbar {
+                toolbar.displayMode = .iconAndLabel
+            }
         }
     }
 }

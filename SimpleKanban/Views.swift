@@ -10,6 +10,14 @@
 import AppKit
 import SwiftUI
 
+// MARK: - String+Identifiable
+
+/// Extension to make String work with sheet(item:) pattern.
+/// The string itself serves as its own ID.
+extension String: @retroactive Identifiable {
+    public var id: String { self }
+}
+
 // MARK: - BoardView
 
 /// Main board view displaying columns horizontally.
@@ -42,8 +50,9 @@ struct BoardView: View {
     /// Shift+click selects all cards from anchor to clicked card within same column.
     @State private var selectionAnchor: String? = nil
 
-    @State private var isAddingCard: Bool = false
-    @State private var newCardColumnID: String = ""
+    /// Column ID for new card creation (nil when not adding)
+    /// Using optional String with sheet(item:) to avoid SwiftUI state race
+    @State private var addingCardToColumn: String? = nil
 
     /// Whether to show delete confirmation alert
     @State private var showDeleteConfirmation: Bool = false
@@ -53,6 +62,13 @@ struct BoardView: View {
 
     /// Tracks if the board view has keyboard focus
     @FocusState private var isBoardFocused: Bool
+
+    /// Title of card currently being dragged (nil when not dragging)
+    /// Used to hide the original card while its ghost is being dragged
+    @State private var draggingCardTitle: String? = nil
+
+    /// Whether to show the board settings sheet
+    @State private var showBoardSettings: Bool = false
 
     // MARK: - Selection Helpers
 
@@ -112,70 +128,99 @@ struct BoardView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let columnCount: Int = store.board.columns.count
-            let padding: CGFloat = 16
-            let spacing: CGFloat = 16
-            let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(columnCount - 1)
-            let columnWidth: CGFloat = max(250, (geometry.size.width - totalSpacing) / CGFloat(columnCount))
+        VStack(spacing: 0) {
+            GeometryReader { geometry in
+                let columnCount: Int = store.board.columns.count
+                let padding: CGFloat = 16
+                let spacing: CGFloat = 16
+                let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(columnCount - 1)
+                let columnWidth: CGFloat = max(250, (geometry.size.width - totalSpacing) / CGFloat(columnCount))
 
-            ScrollView(.horizontal, showsIndicators: true) {
-                HStack(alignment: .top, spacing: spacing) {
-                    ForEach(store.board.columns, id: \.id) { column in
-                        ColumnView(
-                            column: column,
-                            cards: store.cards(forColumn: column.id),
-                            labels: store.board.labels,
-                            columnWidth: columnWidth,
-                            selectedCardTitles: selectedCardTitles,
-                            onCardTap: { card, isCommand, isShift in
-                                // Handle click with modifiers for multi-select
-                                if isShift {
-                                    selectRange(to: card.title)
-                                } else if isCommand {
-                                    toggleSelection(card.title)
-                                } else {
-                                    selectSingle(card.title)
-                                }
-                            },
-                            onCardDoubleTap: { card in
-                                editingCard = card
-                            },
-                            onAddCard: {
-                                newCardColumnID = column.id
-                                isAddingCard = true
-                            },
-                            onMoveCard: { cardTitle, targetColumn, index in
-                                // If the moved card is part of multi-selection, move all selected
-                                if selectedCardTitles.contains(cardTitle) && selectedCardTitles.count > 1 {
-                                    let cardsToMove: [Card] = store.cards(withTitles: selectedCardTitles)
-                                    try? store.moveCards(cardsToMove, toColumn: targetColumn)
-                                } else {
-                                    // Single card move
-                                    if let card = store.card(withTitle: cardTitle) {
-                                        try? store.moveCard(card, toColumn: targetColumn, atIndex: index)
+                ScrollView(.horizontal, showsIndicators: true) {
+                    HStack(alignment: .top, spacing: spacing) {
+                        ForEach(store.board.columns, id: \.id) { column in
+                            ColumnView(
+                                column: column,
+                                cards: store.cards(forColumn: column.id),
+                                labels: store.board.labels,
+                                columnWidth: columnWidth,
+                                selectedCardTitles: selectedCardTitles,
+                                draggingCardTitle: $draggingCardTitle,
+                                onCardTap: { card, isCommand, isShift in
+                                    // Clear any stale dragging state (in case drag was cancelled)
+                                    draggingCardTitle = nil
+
+                                    // Handle click with modifiers for multi-select
+                                    if isShift {
+                                        selectRange(to: card.title)
+                                    } else if isCommand {
+                                        toggleSelection(card.title)
+                                    } else {
+                                        selectSingle(card.title)
                                     }
+                                },
+                                onCardDoubleTap: { card in
+                                    editingCard = card
+                                },
+                                onAddCard: {
+                                    addingCardToColumn = column.id
+                                },
+                                onMoveCard: { cardTitle, targetColumn, index in
+                                    // If the moved card is part of multi-selection, move all selected
+                                    if selectedCardTitles.contains(cardTitle) && selectedCardTitles.count > 1 {
+                                        let cardsToMove: [Card] = store.cards(withTitles: selectedCardTitles)
+                                        try? store.moveCards(cardsToMove, toColumn: targetColumn)
+                                    } else {
+                                        // Single card move
+                                        if let card = store.card(withTitle: cardTitle) {
+                                            try? store.moveCard(card, toColumn: targetColumn, atIndex: index)
+                                        }
+                                    }
+                                },
+                                onArchiveCard: { card in
+                                    try? store.archiveCard(card)
+                                    selectedCardTitles.remove(card.title)
                                 }
-                            },
-                            onArchiveCard: { card in
-                                try? store.archiveCard(card)
-                                selectedCardTitles.remove(card.title)
-                            }
-                        )
+                            )
+                        }
                     }
+                    .padding(padding)
                 }
-                .padding(padding)
             }
-        }
-        .focusable()
-        .focused($isBoardFocused)
-        .focusEffectDisabled()  // Disable default blue focus ring - we handle selection visually on cards
-        .onAppear {
-            // Auto-focus the board when it appears
-            isBoardFocused = true
-        }
-        .onKeyPress { keyPress in
-            handleKeyPress(keyPress)
+            .focusable()
+            .focused($isBoardFocused)
+            .focusEffectDisabled()  // Disable default blue focus ring - we handle selection visually on cards
+            .onAppear {
+                // Auto-focus the board when it appears
+                isBoardFocused = true
+            }
+            .onKeyPress { keyPress in
+                handleKeyPress(keyPress)
+            }
+
+            // Bottom statusbar with selection info
+            HStack {
+                Spacer()
+
+                // Selection status text
+                if selectedCardTitles.count > 1 {
+                    Text("\(selectedCardTitles.count) cards selected")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else if let title = singleSelectedTitle {
+                    Text("Selected: \(title)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text("\(store.cards.count) cards")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color(nsColor: .controlBackgroundColor))
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.board.title)
@@ -210,24 +255,6 @@ struct BoardView: View {
                     }
                 )
 
-                Divider()
-
-                // Selection status text
-                if selectedCardTitles.count > 1 {
-                    Text("\(selectedCardTitles.count) cards selected")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                } else if let title = singleSelectedTitle {
-                    Text("Selected: \(title)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .frame(maxWidth: 150)
-                } else {
-                    Text("\(store.cards.count) cards")
-                        .foregroundStyle(.secondary)
-                }
-
                 // Git sync status indicator (if git repo)
                 if let gitSync = gitSync {
                     Divider()
@@ -238,6 +265,15 @@ struct BoardView: View {
                         .font(.caption2)
                         .foregroundStyle(.tertiary)
                 }
+
+                // Settings button
+                Divider()
+                Button(action: {
+                    showBoardSettings = true
+                }) {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Board settings")
             }
         }
         .sheet(item: $editingCard) { card in
@@ -258,17 +294,23 @@ struct BoardView: View {
                 }
             )
         }
-        .sheet(isPresented: $isAddingCard) {
+        .sheet(item: $addingCardToColumn) { columnID in
             NewCardView(
-                columnID: newCardColumnID,
+                columnID: columnID,
                 onSave: { title, column, body in
-                    try? store.addCard(title: title, toColumn: column, body: body)
-                    isAddingCard = false
-                    // Select the newly created card
-                    selectSingle(title)
+                    do {
+                        try store.addCard(title: title, toColumn: column, body: body)
+                        addingCardToColumn = nil
+                        // Select the newly created card
+                        selectSingle(title)
+                    } catch {
+                        // Log error for debugging - card creation failed
+                        print("ERROR: Failed to create card '\(title)': \(error)")
+                        addingCardToColumn = nil
+                    }
                 },
                 onCancel: {
-                    isAddingCard = false
+                    addingCardToColumn = nil
                 }
             )
         }
@@ -288,6 +330,14 @@ struct BoardView: View {
             } else {
                 Text("Are you sure you want to delete \(cardsToDelete.count) cards? This cannot be undone.")
             }
+        }
+        .sheet(isPresented: $showBoardSettings) {
+            BoardSettingsView(
+                store: store,
+                onDismiss: {
+                    showBoardSettings = false
+                }
+            )
         }
     }
 
@@ -470,8 +520,12 @@ struct BoardView: View {
 /// - Column header with name and card count
 /// - Scrollable list of card previews
 /// - "Add card" button at bottom
-/// - Drop target for drag & drop
+/// - Drop target for drag & drop with visual gap showing insertion point
 /// - Selection highlight for keyboard navigation (supports multi-select)
+///
+/// Drag behavior: When dragging a card over the column, cards visually rearrange
+/// to show a gap where the card will be inserted. This provides intuitive feedback
+/// without requiring precise cursor positioning.
 struct ColumnView: View {
     let column: Column
     let cards: [Card]
@@ -481,6 +535,10 @@ struct ColumnView: View {
     /// Titles of currently selected cards (for multi-select highlight)
     let selectedCardTitles: Set<String>
 
+    /// Title of card currently being dragged (shared across all columns)
+    /// The original card is hidden while dragging to avoid showing duplicates
+    @Binding var draggingCardTitle: String?
+
     /// Callback for card click with modifier state (card, isCommand, isShift)
     let onCardTap: (Card, Bool, Bool) -> Void
     let onCardDoubleTap: (Card) -> Void
@@ -489,7 +547,18 @@ struct ColumnView: View {
     let onMoveCard: (String, String, Int?) -> Void
     let onArchiveCard: (Card) -> Void
 
-    @State private var isTargeted: Bool = false
+    /// Whether the column itself is targeted for a drop
+    @State private var isColumnTargeted: Bool = false
+
+    /// Index where a dragged card would be inserted (nil if not dragging over column)
+    /// Cards visually rearrange to show a gap at this index
+    @State private var dropTargetIndex: Int? = nil
+
+    /// Tracks card frame positions for calculating drop index from cursor position
+    @State private var cardFrames: [Int: CGRect] = [:]
+
+    /// Height of the gap to show when dragging (matches approximate card height)
+    private let dropGapHeight: CGFloat = 60
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -521,46 +590,83 @@ struct ColumnView: View {
             .padding(.top, 12)
             .padding(.bottom, 8)
 
-            // Cards list (drop target)
+            // Cards list - cards visually shift to show insertion gap
             ScrollView(.vertical, showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ForEach(cards, id: \.title) { card in
-                        CardView(
-                            card: card,
-                            labels: labels,
-                            isSelected: selectedCardTitles.contains(card.title)
-                        )
-                        .onTapGesture(count: 2) {
-                            onCardDoubleTap(card)
+                VStack(spacing: 4) {
+                    ForEach(Array(cards.enumerated()), id: \.element.title) { index, card in
+                        // Add gap before this card if dropping here
+                        if dropTargetIndex == index {
+                            Color.clear
+                                .frame(height: dropGapHeight)
+                                .transition(.opacity.combined(with: .scale(scale: 0.8)))
                         }
-                        .onTapGesture(count: 1) {
-                            // Check modifier keys at tap time using NSEvent
-                            let modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
-                            let isCommand: Bool = modifiers.contains(.command)
-                            let isShift: Bool = modifiers.contains(.shift)
-                            onCardTap(card, isCommand, isShift)
-                        }
-                        .draggable(card.title)
-                        .contextMenu {
-                            Button("Edit") {
+
+                        // Hide the card if it's currently being dragged
+                        if draggingCardTitle != card.title {
+                            CardView(
+                                card: card,
+                                labels: labels,
+                                isSelected: selectedCardTitles.contains(card.title)
+                            )
+                            .onTapGesture(count: 2) {
                                 onCardDoubleTap(card)
                             }
-                            Button("Archive") {
-                                onArchiveCard(card)
+                            .onTapGesture(count: 1) {
+                                // Check modifier keys at tap time using NSEvent
+                                let modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags
+                                let isCommand: Bool = modifiers.contains(.command)
+                                let isShift: Bool = modifiers.contains(.shift)
+                                onCardTap(card, isCommand, isShift)
                             }
+                            .onDrag {
+                                // Set dragging state when drag starts
+                                draggingCardTitle = card.title
+                                return NSItemProvider(object: card.title as NSString)
+                            }
+                            .contextMenu {
+                                Button("Edit") {
+                                    onCardDoubleTap(card)
+                                }
+                                Button("Archive") {
+                                    onArchiveCard(card)
+                                }
+                            }
+                            .background(
+                                GeometryReader { geo in
+                                    Color.clear.preference(
+                                        key: CardFramePreferenceKey.self,
+                                        value: [index: geo.frame(in: .named("columnScroll"))]
+                                    )
+                                }
+                            )
+                            .padding(.horizontal, 12)
                         }
                     }
+
+                    // Add gap at the end if dropping at last position
+                    if dropTargetIndex == cards.count {
+                        Color.clear
+                            .frame(height: dropGapHeight)
+                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                    }
                 }
-                .padding(.horizontal, 12)
                 .padding(.vertical, 8)
+                .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
             }
-            .dropDestination(for: String.self) { items, _ in
-                guard let cardTitle = items.first else { return false }
-                onMoveCard(cardTitle, column.id, nil)
-                return true
-            } isTargeted: { targeted in
-                isTargeted = targeted
+            .coordinateSpace(name: "columnScroll")
+            .onPreferenceChange(CardFramePreferenceKey.self) { frames in
+                cardFrames = frames
             }
+            // Custom drop delegate for continuous location tracking during drag
+            .onDrop(of: [.text], delegate: CardDropDelegate(
+                columnID: column.id,
+                cards: cards,
+                cardFrames: $cardFrames,
+                dropTargetIndex: $dropTargetIndex,
+                isColumnTargeted: $isColumnTargeted,
+                draggingCardTitle: $draggingCardTitle,
+                onMoveCard: onMoveCard
+            ))
         }
         .frame(width: columnWidth)
         .background(
@@ -569,8 +675,111 @@ struct ColumnView: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isTargeted ? Color.accentColor : Color.clear, lineWidth: 2)
+                .stroke(isColumnTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
         )
+    }
+
+}
+
+// MARK: - CardFramePreferenceKey
+
+/// Preference key to track card frame positions for drop index calculation.
+/// Collects frames from all cards in a column for hit testing during drag.
+struct CardFramePreferenceKey: PreferenceKey {
+    // nonisolated(unsafe) required for Swift 6 - PreferenceKey pattern requires mutable default
+    nonisolated(unsafe) static var defaultValue: [Int: CGRect] = [:]
+
+    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
+        value.merge(nextValue()) { _, new in new }
+    }
+}
+
+// MARK: - CardDropDelegate
+
+/// Custom drop delegate that tracks cursor position during drag operations.
+/// Updates the drop target index based on cursor Y position relative to card centers,
+/// allowing cards to visually rearrange and show the insertion gap.
+struct CardDropDelegate: DropDelegate {
+    let columnID: String
+    let cards: [Card]
+    @Binding var cardFrames: [Int: CGRect]
+    @Binding var dropTargetIndex: Int?
+    @Binding var isColumnTargeted: Bool
+    @Binding var draggingCardTitle: String?
+    let onMoveCard: (String, String, Int?) -> Void
+
+    /// Called when the drag enters the drop area
+    func dropEntered(info: DropInfo) {
+        isColumnTargeted = true
+        updateDropIndex(for: info.location)
+    }
+
+    /// Called continuously as the drag moves within the drop area
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateDropIndex(for: info.location)
+        return DropProposal(operation: .move)
+    }
+
+    /// Called when the drag exits the drop area
+    func dropExited(info: DropInfo) {
+        isColumnTargeted = false
+        dropTargetIndex = nil
+        // Note: Don't clear draggingCardTitle here - user might be dragging to another column
+    }
+
+    /// Called when the user drops the item
+    func performDrop(info: DropInfo) -> Bool {
+        // Extract the card title from the drag data
+        guard let itemProvider = info.itemProviders(for: [.text]).first else {
+            isColumnTargeted = false
+            dropTargetIndex = nil
+            draggingCardTitle = nil
+            return false
+        }
+
+        itemProvider.loadObject(ofClass: String.self) { string, error in
+            DispatchQueue.main.async {
+                guard let cardTitle = string else {
+                    self.isColumnTargeted = false
+                    self.dropTargetIndex = nil
+                    self.draggingCardTitle = nil
+                    return
+                }
+                let targetIndex: Int = self.dropTargetIndex ?? self.cards.count
+                self.onMoveCard(cardTitle, self.columnID, targetIndex)
+                self.isColumnTargeted = false
+                self.dropTargetIndex = nil
+                self.draggingCardTitle = nil
+            }
+        }
+        return true
+    }
+
+    /// Calculates which index to insert at based on cursor Y position.
+    /// Compares cursor position to card center points to find the insertion slot.
+    private func updateDropIndex(for location: CGPoint) {
+        let y: CGFloat = location.y
+
+        // If no cards, insert at beginning
+        if cards.isEmpty {
+            dropTargetIndex = 0
+            return
+        }
+
+        // Check each card's frame to find where cursor falls
+        // Insert before a card if cursor is above that card's center
+        for index in 0..<cards.count {
+            if let frame = cardFrames[index] {
+                let cardCenter: CGFloat = frame.midY
+                if y < cardCenter {
+                    dropTargetIndex = index
+                    return
+                }
+            }
+        }
+
+        // Below all cards - insert at end
+        dropTargetIndex = cards.count
     }
 }
 
@@ -1371,3 +1580,713 @@ struct CommitModalView: View {
         }
     }
 }
+
+// MARK: - Board Settings View
+
+/// Settings panel for configuring board metadata: name, columns, and labels.
+///
+/// Displays as a sheet with sections:
+/// - Board Name: Text field to rename the board
+/// - Columns: List with drag-to-reorder, rename, add, delete (blocks if cards exist)
+/// - Labels: List with color picker, rename, add, delete
+///
+/// Changes are saved immediately to board.md when modified.
+struct BoardSettingsView: View {
+    @Bindable var store: BoardStore
+    let onDismiss: () -> Void
+
+    /// Local copy of board name for editing
+    @State private var boardName: String = ""
+
+    /// Local copy of columns for editing/reordering
+    @State private var columns: [Column] = []
+
+    /// Local copy of labels for editing
+    @State private var labels: [CardLabel] = []
+
+    /// Whether we have unsaved changes
+    @State private var hasChanges: Bool = false
+
+    /// Column pending deletion (for confirmation)
+    @State private var columnToDelete: Column? = nil
+
+    /// Cards that would be affected by column deletion
+    @State private var cardsInColumnToDelete: [Card] = []
+
+    /// Target column for moving cards when deleting a column
+    @State private var moveCardsToColumn: String = ""
+
+    /// Label pending deletion (for confirmation)
+    @State private var labelToDelete: CardLabel? = nil
+
+    /// Whether to show add column sheet
+    @State private var showAddColumn: Bool = false
+
+    /// Whether to show add label sheet
+    @State private var showAddLabel: Bool = false
+
+    /// New column name input
+    @State private var newColumnName: String = ""
+
+    /// New label name input
+    @State private var newLabelName: String = ""
+
+    /// New label color input
+    @State private var newLabelColor: Color = .blue
+
+    /// Error message to display
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button("Done") { onDismiss() }
+                    .keyboardShortcut(.escape)
+
+                Spacer()
+
+                Text("Board Settings")
+                    .font(.headline)
+
+                Spacer()
+
+                // Invisible button to balance header
+                Button("Done") { }
+                    .opacity(0)
+                    .disabled(true)
+            }
+            .padding()
+
+            Divider()
+
+            // Content - scrollable form with sections
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // MARK: Board Name Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Board Name")
+                            .font(.headline)
+
+                        TextField("Board name", text: $boardName)
+                            .textFieldStyle(.roundedBorder)
+                            .onChange(of: boardName) { _, newValue in
+                                if newValue != store.board.title {
+                                    try? store.updateBoardTitle(newValue)
+                                }
+                            }
+                    }
+
+                    Divider()
+
+                    // MARK: Columns Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Columns")
+                                .font(.headline)
+                            Spacer()
+                            Button(action: { showAddColumn = true }) {
+                                Label("Add", systemImage: "plus")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        Text("Drag to reorder. Cards are stored in column subdirectories.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        // Column list with drag reorder
+                        VStack(spacing: 2) {
+                            ForEach(columns, id: \.id) { column in
+                                ColumnSettingsRow(
+                                    column: column,
+                                    cardCount: store.cards(forColumn: column.id).count,
+                                    onRename: { newName in
+                                        try? store.updateColumnName(column.id, name: newName)
+                                        if let index: Int = columns.firstIndex(where: { $0.id == column.id }) {
+                                            columns[index].name = newName
+                                        }
+                                    },
+                                    onDelete: {
+                                        let cardsInColumn: [Card] = store.cards(forColumn: column.id)
+                                        if cardsInColumn.isEmpty {
+                                            // No cards, safe to delete
+                                            try? store.removeColumn(column.id)
+                                            columns.removeAll { $0.id == column.id }
+                                        } else {
+                                            // Has cards, need confirmation
+                                            columnToDelete = column
+                                            cardsInColumnToDelete = cardsInColumn
+                                            // Set default target to first other column
+                                            moveCardsToColumn = columns.first { $0.id != column.id }?.id ?? ""
+                                        }
+                                    }
+                                )
+                                .onDrag {
+                                    NSItemProvider(object: column.id as NSString)
+                                }
+                                .onDrop(of: [.text], delegate: ColumnReorderDropDelegate(
+                                    targetColumn: column,
+                                    columns: $columns,
+                                    onReorder: { newOrder in
+                                        try? store.reorderColumns(newOrder.map { $0.id })
+                                    }
+                                ))
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(nsColor: .controlBackgroundColor))
+                        .cornerRadius(8)
+                    }
+
+                    Divider()
+
+                    // MARK: Labels Section
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Labels")
+                                .font(.headline)
+                            Spacer()
+                            Button(action: { showAddLabel = true }) {
+                                Label("Add", systemImage: "plus")
+                            }
+                            .buttonStyle(.borderless)
+                        }
+
+                        Text("Click color swatch to change. Labels persist in card files.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        if labels.isEmpty {
+                            Text("No labels defined")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .italic()
+                                .padding(.vertical, 8)
+                        } else {
+                            VStack(spacing: 2) {
+                                ForEach(labels, id: \.id) { label in
+                                    LabelSettingsRow(
+                                        label: label,
+                                        onRename: { newName in
+                                            try? store.updateLabel(label.id, name: newName)
+                                            if let index: Int = labels.firstIndex(where: { $0.id == label.id }) {
+                                                labels[index].name = newName
+                                            }
+                                        },
+                                        onColorChange: { newColor in
+                                            let hexColor: String = newColor.toHex()
+                                            try? store.updateLabel(label.id, color: hexColor)
+                                            if let index: Int = labels.firstIndex(where: { $0.id == label.id }) {
+                                                labels[index].color = hexColor
+                                            }
+                                        },
+                                        onDelete: {
+                                            labelToDelete = label
+                                        }
+                                    )
+                                    .onDrag {
+                                        NSItemProvider(object: label.id as NSString)
+                                    }
+                                    .onDrop(of: [.text], delegate: LabelReorderDropDelegate(
+                                        targetLabel: label,
+                                        labels: $labels,
+                                        onReorder: { newOrder in
+                                            try? store.reorderLabels(newOrder.map { $0.id })
+                                        }
+                                    ))
+                                }
+                            }
+                            .padding(8)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(8)
+                        }
+                    }
+                }
+                .padding()
+            }
+
+            // Error message
+            if let error = errorMessage {
+                Text(error)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .padding(.horizontal)
+            }
+        }
+        .frame(width: 500, height: 600)
+        .onAppear {
+            // Initialize local state from store
+            boardName = store.board.title
+            columns = store.board.columns
+            labels = store.board.labels
+        }
+        // Column deletion confirmation (when cards exist)
+        .alert("Delete Column", isPresented: Binding(
+            get: { columnToDelete != nil },
+            set: { if !$0 { columnToDelete = nil; cardsInColumnToDelete = [] } }
+        )) {
+            if columns.count > 1 {
+                Picker("Move cards to:", selection: $moveCardsToColumn) {
+                    ForEach(columns.filter { $0.id != columnToDelete?.id }, id: \.id) { col in
+                        Text(col.name).tag(col.id)
+                    }
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                columnToDelete = nil
+                cardsInColumnToDelete = []
+            }
+            Button("Move & Delete", role: .destructive) {
+                if let column = columnToDelete {
+                    // Move cards to target column
+                    for card in cardsInColumnToDelete {
+                        try? store.moveCard(card, toColumn: moveCardsToColumn, atIndex: nil)
+                    }
+                    // Then delete the column
+                    try? store.removeColumn(column.id)
+                    columns.removeAll { $0.id == column.id }
+                }
+                columnToDelete = nil
+                cardsInColumnToDelete = []
+            }
+            .disabled(columns.count <= 1)
+        } message: {
+            if let column = columnToDelete {
+                if columns.count > 1 {
+                    Text("Column \"\(column.name)\" has \(cardsInColumnToDelete.count) card(s). Move them to another column before deleting.")
+                } else {
+                    Text("Cannot delete the only column. Create another column first.")
+                }
+            }
+        }
+        // Label deletion confirmation
+        .alert("Delete Label", isPresented: Binding(
+            get: { labelToDelete != nil },
+            set: { if !$0 { labelToDelete = nil } }
+        )) {
+            Button("Cancel", role: .cancel) {
+                labelToDelete = nil
+            }
+            Button("Delete", role: .destructive) {
+                if let label = labelToDelete {
+                    try? store.removeLabel(label.id)
+                    labels.removeAll { $0.id == label.id }
+                }
+                labelToDelete = nil
+            }
+        } message: {
+            if let label = labelToDelete {
+                Text("Delete label \"\(label.name)\"? Cards using this label will keep the label ID but it won't display.")
+            }
+        }
+        // Add column sheet
+        .sheet(isPresented: $showAddColumn) {
+            AddColumnSheet(
+                existingColumnIDs: Set(columns.map { $0.id }),
+                onAdd: { name in
+                    let id: String = slugify(name)
+                    try? store.addColumn(id: id, name: name)
+                    columns.append(Column(id: id, name: name))
+                    showAddColumn = false
+                },
+                onCancel: { showAddColumn = false }
+            )
+        }
+        // Add label sheet
+        .sheet(isPresented: $showAddLabel) {
+            AddLabelSheet(
+                existingLabelIDs: Set(labels.map { $0.id }),
+                onAdd: { name, color in
+                    let id: String = slugify(name)
+                    let hexColor: String = color.toHex()
+                    try? store.addLabel(id: id, name: name, color: hexColor)
+                    labels.append(CardLabel(id: id, name: name, color: hexColor))
+                    showAddLabel = false
+                },
+                onCancel: { showAddLabel = false }
+            )
+        }
+    }
+}
+
+// MARK: - Column Settings Row
+
+/// A single row in the columns list showing column name with edit/delete actions.
+struct ColumnSettingsRow: View {
+    let column: Column
+    let cardCount: Int
+    let onRename: (String) -> Void
+    let onDelete: () -> Void
+
+    @State private var isEditing: Bool = false
+    @State private var editedName: String = ""
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Drag handle
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+
+            if isEditing {
+                TextField("Column name", text: $editedName, onCommit: {
+                    if !editedName.isEmpty && editedName != column.name {
+                        onRename(editedName)
+                    }
+                    isEditing = false
+                })
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+
+                Button("Done") {
+                    if !editedName.isEmpty && editedName != column.name {
+                        onRename(editedName)
+                    }
+                    isEditing = false
+                }
+                .buttonStyle(.borderless)
+            } else {
+                Text(column.name)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("\(cardCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.secondary.opacity(0.2))
+                    .clipShape(Capsule())
+
+                Button(action: {
+                    editedName = column.name
+                    isEditing = true
+                }) {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(Color(nsColor: .textBackgroundColor))
+        .cornerRadius(6)
+    }
+}
+
+// MARK: - Label Settings Row
+
+/// A single row in the labels list showing color swatch, name, and edit/delete actions.
+struct LabelSettingsRow: View {
+    let label: CardLabel
+    let onRename: (String) -> Void
+    let onColorChange: (Color) -> Void
+    let onDelete: () -> Void
+
+    @State private var isEditing: Bool = false
+    @State private var editedName: String = ""
+    @State private var selectedColor: Color = .blue
+
+    var body: some View {
+        HStack(spacing: 8) {
+            // Drag handle
+            Image(systemName: "line.3.horizontal")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+
+            // Color picker (always visible)
+            ColorPicker("", selection: $selectedColor, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 24)
+                .onChange(of: selectedColor) { _, newColor in
+                    onColorChange(newColor)
+                }
+
+            if isEditing {
+                TextField("Label name", text: $editedName, onCommit: {
+                    if !editedName.isEmpty && editedName != label.name {
+                        onRename(editedName)
+                    }
+                    isEditing = false
+                })
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: .infinity)
+
+                Button("Done") {
+                    if !editedName.isEmpty && editedName != label.name {
+                        onRename(editedName)
+                    }
+                    isEditing = false
+                }
+                .buttonStyle(.borderless)
+            } else {
+                // Label preview chip
+                Text(label.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((Color(hex: label.color) ?? .gray).opacity(0.2))
+                    .foregroundStyle(Color(hex: label.color) ?? .gray)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                Text(label.color)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .monospaced()
+
+                Button(action: {
+                    editedName = label.name
+                    isEditing = true
+                }) {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+
+                Button(action: onDelete) {
+                    Image(systemName: "trash")
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(Color(nsColor: .textBackgroundColor))
+        .cornerRadius(6)
+        .onAppear {
+            selectedColor = Color(hex: label.color) ?? .blue
+        }
+    }
+}
+
+// MARK: - Add Column Sheet
+
+/// Small sheet for adding a new column.
+struct AddColumnSheet: View {
+    let existingColumnIDs: Set<String>
+    let onAdd: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String = ""
+    @FocusState private var isFocused: Bool
+
+    private var slugifiedID: String {
+        slugify(name)
+    }
+
+    private var isValid: Bool {
+        !name.isEmpty && !existingColumnIDs.contains(slugifiedID)
+    }
+
+    private var isDuplicate: Bool {
+        !name.isEmpty && existingColumnIDs.contains(slugifiedID)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Add Column")
+                .font(.headline)
+
+            TextField("Column name", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .focused($isFocused)
+
+            if isDuplicate {
+                Text("A column with this name already exists")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            } else if !name.isEmpty {
+                Text("ID: \(slugifiedID)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.escape)
+                Spacer()
+                Button("Add") { onAdd(name) }
+                    .keyboardShortcut(.return)
+                    .disabled(!isValid)
+            }
+        }
+        .padding()
+        .frame(width: 300)
+        .onAppear { isFocused = true }
+    }
+}
+
+// MARK: - Add Label Sheet
+
+/// Small sheet for adding a new label with color picker.
+struct AddLabelSheet: View {
+    let existingLabelIDs: Set<String>
+    let onAdd: (String, Color) -> Void
+    let onCancel: () -> Void
+
+    @State private var name: String = ""
+    @State private var color: Color = .blue
+    @FocusState private var isFocused: Bool
+
+    private var slugifiedID: String {
+        slugify(name)
+    }
+
+    private var isValid: Bool {
+        !name.isEmpty && !existingLabelIDs.contains(slugifiedID)
+    }
+
+    private var isDuplicate: Bool {
+        !name.isEmpty && existingLabelIDs.contains(slugifiedID)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Add Label")
+                .font(.headline)
+
+            HStack {
+                ColorPicker("Color:", selection: $color, supportsOpacity: false)
+                    .frame(width: 100)
+
+                TextField("Label name", text: $name)
+                    .textFieldStyle(.roundedBorder)
+                    .focused($isFocused)
+            }
+
+            if isDuplicate {
+                Text("A label with this name already exists")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+
+            // Preview
+            if !name.isEmpty && !isDuplicate {
+                HStack {
+                    Text("Preview:")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Text(name)
+                        .font(.system(size: 12, weight: .medium))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(color.opacity(0.2))
+                        .foregroundStyle(color)
+                        .clipShape(Capsule())
+                }
+            }
+
+            HStack {
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.escape)
+                Spacer()
+                Button("Add") { onAdd(name, color) }
+                    .keyboardShortcut(.return)
+                    .disabled(!isValid)
+            }
+        }
+        .padding()
+        .frame(width: 350)
+        .onAppear { isFocused = true }
+    }
+}
+
+// MARK: - Column Reorder Drop Delegate
+
+/// Drop delegate for reordering columns via drag and drop.
+struct ColumnReorderDropDelegate: DropDelegate {
+    let targetColumn: Column
+    @Binding var columns: [Column]
+    let onReorder: ([Column]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID = info.itemProviders(for: [.text]).first else { return }
+
+        // Capture current state before async
+        let currentColumns: [Column] = columns
+        let targetID: String = targetColumn.id
+
+        draggedID.loadObject(ofClass: String.self) { string, _ in
+            guard let sourceID = string,
+                  let sourceIndex = currentColumns.firstIndex(where: { $0.id == sourceID }),
+                  let targetIndex = currentColumns.firstIndex(where: { $0.id == targetID }),
+                  sourceIndex != targetIndex else { return }
+
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    columns.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: targetIndex > sourceIndex ? targetIndex + 1 : targetIndex)
+                }
+            }
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onReorder(columns)
+        return true
+    }
+}
+
+// MARK: - Label Reorder Drop Delegate
+
+/// Drop delegate for reordering labels via drag and drop.
+struct LabelReorderDropDelegate: DropDelegate {
+    let targetLabel: CardLabel
+    @Binding var labels: [CardLabel]
+    let onReorder: ([CardLabel]) -> Void
+
+    func dropEntered(info: DropInfo) {
+        guard let draggedID = info.itemProviders(for: [.text]).first else { return }
+
+        // Capture current state before async
+        let currentLabels: [CardLabel] = labels
+        let targetID: String = targetLabel.id
+
+        draggedID.loadObject(ofClass: String.self) { string, _ in
+            guard let sourceID = string,
+                  let sourceIndex = currentLabels.firstIndex(where: { $0.id == sourceID }),
+                  let targetIndex = currentLabels.firstIndex(where: { $0.id == targetID }),
+                  sourceIndex != targetIndex else { return }
+
+            DispatchQueue.main.async {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    labels.move(fromOffsets: IndexSet(integer: sourceIndex), toOffset: targetIndex > sourceIndex ? targetIndex + 1 : targetIndex)
+                }
+            }
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        onReorder(labels)
+        return true
+    }
+}
+
+// MARK: - Color to Hex Extension
+
+extension Color {
+    /// Converts a SwiftUI Color to a hex string like "#rrggbb".
+    func toHex() -> String {
+        // Get NSColor and extract components
+        let nsColor: NSColor = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+        nsColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        let r: Int = Int(red * 255)
+        let g: Int = Int(green * 255)
+        let b: Int = Int(blue * 255)
+
+        return String(format: "#%02x%02x%02x", r, g, b)
+    }
+}
+

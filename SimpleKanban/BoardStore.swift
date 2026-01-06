@@ -348,6 +348,88 @@ public final class BoardStore: @unchecked Sendable {
         try BoardWriter.save(board, in: url)
     }
 
+    /// Updates a column's display name.
+    ///
+    /// - Parameters:
+    ///   - columnID: The column ID to update
+    ///   - name: The new display name
+    public func updateColumnName(_ columnID: String, name: String) throws {
+        guard let index: Int = board.columns.firstIndex(where: { $0.id == columnID }) else {
+            return
+        }
+        board.columns[index].name = name
+        try BoardWriter.save(board, in: url)
+    }
+
+    /// Reorders columns to match the given order.
+    ///
+    /// - Parameter columnIDs: The column IDs in their new order
+    public func reorderColumns(_ columnIDs: [String]) throws {
+        let reordered: [Column] = columnIDs.compactMap { id in
+            board.columns.first { $0.id == id }
+        }
+        // Only update if we have all columns (prevents data loss)
+        if reordered.count == board.columns.count {
+            board.columns = reordered
+            try BoardWriter.save(board, in: url)
+        }
+    }
+
+    // MARK: - Label Mutations
+
+    /// Adds a new label to the board.
+    ///
+    /// - Parameters:
+    ///   - id: The label ID (used in card.labels field)
+    ///   - name: The display name
+    ///   - color: The hex color string (e.g., "#ff0000")
+    public func addLabel(id: String, name: String, color: String) throws {
+        board.labels.append(CardLabel(id: id, name: name, color: color))
+        try BoardWriter.save(board, in: url)
+    }
+
+    /// Updates a label's name and/or color.
+    ///
+    /// - Parameters:
+    ///   - labelID: The label ID to update
+    ///   - name: The new display name (optional)
+    ///   - color: The new hex color string (optional)
+    public func updateLabel(_ labelID: String, name: String? = nil, color: String? = nil) throws {
+        guard let index: Int = board.labels.firstIndex(where: { $0.id == labelID }) else {
+            return
+        }
+        if let name: String = name {
+            board.labels[index].name = name
+        }
+        if let color: String = color {
+            board.labels[index].color = color
+        }
+        try BoardWriter.save(board, in: url)
+    }
+
+    /// Removes a label from the board.
+    ///
+    /// - Parameter labelID: The label ID to remove
+    /// - Note: Does not remove the label from cards that have it
+    public func removeLabel(_ labelID: String) throws {
+        board.labels.removeAll { $0.id == labelID }
+        try BoardWriter.save(board, in: url)
+    }
+
+    /// Reorders labels to match the given order.
+    ///
+    /// - Parameter labelIDs: The label IDs in their new order
+    public func reorderLabels(_ labelIDs: [String]) throws {
+        let reordered: [CardLabel] = labelIDs.compactMap { id in
+            board.labels.first { $0.id == id }
+        }
+        // Only update if we have all labels (prevents data loss)
+        if reordered.count == board.labels.count {
+            board.labels = reordered
+            try BoardWriter.save(board, in: url)
+        }
+    }
+
     // MARK: - Internal (for FileWatcher)
 
     /// Reloads a card from disk, updating the in-memory state.

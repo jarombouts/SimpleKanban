@@ -15,6 +15,11 @@ Our backlog lives in a **separate repository** at `../SimpleKanbanBacklog` (not 
 - Tests git sync with a real remote
 - Demonstrates the recommended setup: one repo per board
 
+**Important:** When finishing a task, always update the backlog:
+1. Move the card from `cards/todo/` to `cards/done/`
+2. Update the `column: done` field in the card's frontmatter
+3. Update the `modified:` timestamp
+
 ## Code Style
 
 ### Comments
