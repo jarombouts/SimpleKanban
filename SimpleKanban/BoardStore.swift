@@ -27,6 +27,11 @@ import Observation
 ///
 /// All mutations are immediately persisted to disk. The store maintains
 /// cards sorted by their lexicographic position for consistent ordering.
+///
+/// Search and Filter:
+/// The store also manages search/filter state. Use `searchText` and `filterLabels`
+/// to filter which cards are displayed. Use `filteredCards(forColumn:)` to get
+/// the filtered list instead of `cards(forColumn:)`.
 @Observable
 public final class BoardStore: @unchecked Sendable {
     // Note: @unchecked Sendable because we're using @Observable which isn't
@@ -41,6 +46,21 @@ public final class BoardStore: @unchecked Sendable {
 
     /// The directory URL where the board is stored.
     public let url: URL
+
+    // MARK: - Search and Filter State
+
+    /// Text to search for in card titles and bodies.
+    /// Empty string means no text filter is applied.
+    public var searchText: String = ""
+
+    /// Label IDs to filter by. Only cards with ALL these labels are shown.
+    /// Empty set means no label filter is applied.
+    public var filterLabels: Set<String> = []
+
+    /// Whether any filter is currently active (search text or labels).
+    public var isFiltering: Bool {
+        return !searchText.isEmpty || !filterLabels.isEmpty
+    }
 
     /// Creates a BoardStore by loading an existing board from disk.
     ///
@@ -87,6 +107,85 @@ public final class BoardStore: @unchecked Sendable {
     /// - Returns: Array of found cards (order not guaranteed)
     public func cards(withTitles titles: Set<String>) -> [Card] {
         return cards.filter { titles.contains($0.title) }
+    }
+
+    // MARK: - Filtered Card Queries
+
+    /// Returns filtered cards for a specific column, sorted by position.
+    ///
+    /// Applies both text search (title and body) and label filter based on
+    /// the current `searchText` and `filterLabels` state.
+    ///
+    /// - Parameter columnID: The column ID to filter by
+    /// - Returns: Filtered cards in that column, sorted by position
+    public func filteredCards(forColumn columnID: String) -> [Card] {
+        let columnCards: [Card] = cards(forColumn: columnID)
+
+        // If no filters active, return all cards in column
+        if !isFiltering {
+            return columnCards
+        }
+
+        return columnCards.filter { card in
+            // Check text search (case-insensitive match on title or body)
+            let matchesSearch: Bool
+            if searchText.isEmpty {
+                matchesSearch = true
+            } else {
+                let searchLower: String = searchText.lowercased()
+                let titleMatches: Bool = card.title.lowercased().contains(searchLower)
+                let bodyMatches: Bool = card.body.lowercased().contains(searchLower)
+                matchesSearch = titleMatches || bodyMatches
+            }
+
+            // Check label filter (card must have ALL selected labels)
+            let matchesLabels: Bool
+            if filterLabels.isEmpty {
+                matchesLabels = true
+            } else {
+                let cardLabelSet: Set<String> = Set(card.labels)
+                matchesLabels = filterLabels.isSubset(of: cardLabelSet)
+            }
+
+            return matchesSearch && matchesLabels
+        }
+    }
+
+    /// Returns all filtered cards across all columns.
+    ///
+    /// Useful for getting a count of total matching cards.
+    public var filteredCards: [Card] {
+        if !isFiltering {
+            return cards
+        }
+
+        return cards.filter { card in
+            let matchesSearch: Bool
+            if searchText.isEmpty {
+                matchesSearch = true
+            } else {
+                let searchLower: String = searchText.lowercased()
+                let titleMatches: Bool = card.title.lowercased().contains(searchLower)
+                let bodyMatches: Bool = card.body.lowercased().contains(searchLower)
+                matchesSearch = titleMatches || bodyMatches
+            }
+
+            let matchesLabels: Bool
+            if filterLabels.isEmpty {
+                matchesLabels = true
+            } else {
+                let cardLabelSet: Set<String> = Set(card.labels)
+                matchesLabels = filterLabels.isSubset(of: cardLabelSet)
+            }
+
+            return matchesSearch && matchesLabels
+        }
+    }
+
+    /// Clears all active filters (search text and label filters).
+    public func clearFilters() {
+        searchText = ""
+        filterLabels = []
     }
 
     // MARK: - Card Mutations

@@ -41,6 +41,9 @@ enum NavigationResult: Equatable {
     /// Multiple cards should be moved to a different column
     case bulkMove(cardTitles: Set<String>, toColumnIndex: Int)
 
+    /// Focus the search field
+    case focusSearch
+
     /// No action taken (key not handled or no valid action)
     case none
 }

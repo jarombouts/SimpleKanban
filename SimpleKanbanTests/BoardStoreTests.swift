@@ -362,4 +362,198 @@ struct BoardStoreTests {
         #expect(doneCards[0].title == "First")
         #expect(doneCards[1].title == "Third")
     }
+
+    // MARK: - Search and Filter Tests
+
+    @Test("Filters cards by search text in title")
+    func filtersBySearchTextInTitle() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix login bug", toColumn: "todo")
+        try store.addCard(title: "Add new feature", toColumn: "todo")
+        try store.addCard(title: "Login page design", toColumn: "in-progress")
+
+        // Search for "login"
+        store.searchText = "login"
+
+        let todoFiltered: [Card] = store.filteredCards(forColumn: "todo")
+        let inProgressFiltered: [Card] = store.filteredCards(forColumn: "in-progress")
+
+        #expect(todoFiltered.count == 1)
+        #expect(todoFiltered[0].title == "Fix login bug")
+        #expect(inProgressFiltered.count == 1)
+        #expect(inProgressFiltered[0].title == "Login page design")
+
+        // Clear filter
+        store.clearFilters()
+        #expect(store.filteredCards(forColumn: "todo").count == 2)
+    }
+
+    @Test("Filters cards by search text in body")
+    func filtersBySearchTextInBody() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Task A", toColumn: "todo", body: "This is about authentication")
+        try store.addCard(title: "Task B", toColumn: "todo", body: "This is about styling")
+
+        store.searchText = "authentication"
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Task A")
+    }
+
+    @Test("Search is case insensitive")
+    func searchIsCaseInsensitive() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix BIG Bug", toColumn: "todo")
+        try store.addCard(title: "small task", toColumn: "todo")
+
+        store.searchText = "big"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+
+        store.searchText = "BIG"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+
+        store.searchText = "BiG"
+        #expect(store.filteredCards(forColumn: "todo").count == 1)
+    }
+
+    @Test("Filters cards by single label")
+    func filtersBySingleLabel() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Bug Card", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Feature Card", toColumn: "todo", labels: [])
+        try store.addCard(title: "Another Bug", toColumn: "in-progress", labels: ["bug"])
+
+        store.filterLabels = ["bug"]
+
+        let todoFiltered: [Card] = store.filteredCards(forColumn: "todo")
+        let inProgressFiltered: [Card] = store.filteredCards(forColumn: "in-progress")
+
+        #expect(todoFiltered.count == 1)
+        #expect(todoFiltered[0].title == "Bug Card")
+        #expect(inProgressFiltered.count == 1)
+        #expect(inProgressFiltered[0].title == "Another Bug")
+    }
+
+    @Test("Filters cards by multiple labels (AND logic)")
+    func filtersByMultipleLabels() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        // Add feature label to board
+        let boardMarkdown: String = """
+            ---
+            title: Test Board
+            columns:
+              - id: todo
+                name: To Do
+              - id: in-progress
+                name: In Progress
+              - id: done
+                name: Done
+            labels:
+              - id: bug
+                name: Bug
+                color: "#e74c3c"
+              - id: urgent
+                name: Urgent
+                color: "#e67e22"
+            ---
+            """
+        try boardMarkdown.write(to: tempDir.appendingPathComponent("board.md"), atomically: true, encoding: .utf8)
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Urgent Bug", toColumn: "todo", labels: ["bug", "urgent"])
+        try store.addCard(title: "Normal Bug", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Urgent Task", toColumn: "todo", labels: ["urgent"])
+
+        // Filter by both labels - only cards with BOTH should match
+        store.filterLabels = ["bug", "urgent"]
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Urgent Bug")
+    }
+
+    @Test("Combines search text and label filter")
+    func combinesSearchAndLabelFilter() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Fix login bug", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Login feature", toColumn: "todo", labels: [])
+        try store.addCard(title: "Fix button bug", toColumn: "todo", labels: ["bug"])
+
+        // Search for "login" AND filter by "bug" label
+        store.searchText = "login"
+        store.filterLabels = ["bug"]
+
+        let filtered: [Card] = store.filteredCards(forColumn: "todo")
+        #expect(filtered.count == 1)
+        #expect(filtered[0].title == "Fix login bug")
+    }
+
+    @Test("isFiltering returns correct state")
+    func isFilteringReturnsCorrectState() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+
+        #expect(!store.isFiltering)
+
+        store.searchText = "test"
+        #expect(store.isFiltering)
+
+        store.searchText = ""
+        #expect(!store.isFiltering)
+
+        store.filterLabels = ["bug"]
+        #expect(store.isFiltering)
+
+        store.clearFilters()
+        #expect(!store.isFiltering)
+    }
+
+    @Test("filteredCards returns total matching cards")
+    func filteredCardsReturnsTotal() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Bug A", toColumn: "todo", labels: ["bug"])
+        try store.addCard(title: "Bug B", toColumn: "in-progress", labels: ["bug"])
+        try store.addCard(title: "Feature", toColumn: "done", labels: [])
+
+        store.filterLabels = ["bug"]
+
+        #expect(store.filteredCards.count == 2)
+        #expect(store.cards.count == 3)
+    }
+
+    @Test("Empty search text shows all cards")
+    func emptySearchShowsAll() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let store: BoardStore = try BoardStore(url: tempDir)
+        try store.addCard(title: "Card A", toColumn: "todo")
+        try store.addCard(title: "Card B", toColumn: "todo")
+
+        store.searchText = ""
+        #expect(store.filteredCards(forColumn: "todo").count == 2)
+    }
 }

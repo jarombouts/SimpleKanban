@@ -63,12 +63,18 @@ struct BoardView: View {
     /// Tracks if the board view has keyboard focus
     @FocusState private var isBoardFocused: Bool
 
+    /// Tracks if the search field has focus
+    @FocusState private var isSearchFocused: Bool
+
     /// Title of card currently being dragged (nil when not dragging)
     /// Used to hide the original card while its ghost is being dragged
     @State private var draggingCardTitle: String? = nil
 
     /// Whether to show the board settings sheet
     @State private var showBoardSettings: Bool = false
+
+    /// Whether to show the label filter popover
+    @State private var showLabelFilter: Bool = false
 
     // MARK: - Selection Helpers
 
@@ -141,7 +147,9 @@ struct BoardView: View {
                         ForEach(store.board.columns, id: \.id) { column in
                             ColumnView(
                                 column: column,
-                                cards: store.cards(forColumn: column.id),
+                                cards: store.filteredCards(forColumn: column.id),
+                                allCardsCount: store.cards(forColumn: column.id).count,
+                                isFiltering: store.isFiltering,
                                 labels: store.board.labels,
                                 columnWidth: columnWidth,
                                 selectedCardTitles: selectedCardTitles,
@@ -200,6 +208,17 @@ struct BoardView: View {
 
             // Bottom statusbar with selection info
             HStack {
+                // Filter indicator on the left
+                if store.isFiltering {
+                    HStack(spacing: 4) {
+                        Image(systemName: "line.3.horizontal.decrease.circle.fill")
+                            .foregroundStyle(Color.accentColor)
+                        Text("Showing \(store.filteredCards.count) of \(store.cards.count) cards")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
                 Spacer()
 
                 // Selection status text
@@ -212,7 +231,7 @@ struct BoardView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                } else {
+                } else if !store.isFiltering {
                     Text("\(store.cards.count) cards")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -225,6 +244,68 @@ struct BoardView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .navigationTitle(store.board.title)
         .toolbar {
+            // Search field - leading position
+            ToolbarItem(placement: .automatic) {
+                HStack(spacing: 8) {
+                    // Search text field
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(.secondary)
+                            .font(.caption)
+                        TextField("Search cards...", text: $store.searchText)
+                            .textFieldStyle(.plain)
+                            .frame(width: 150)
+                            .focused($isSearchFocused)
+                        if !store.searchText.isEmpty {
+                            Button(action: {
+                                store.searchText = ""
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                                    .font(.caption)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color(nsColor: .controlBackgroundColor))
+                    .cornerRadius(6)
+
+                    // Label filter button with popover
+                    Button(action: {
+                        showLabelFilter.toggle()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "tag")
+                            if !store.filterLabels.isEmpty {
+                                Text("\(store.filterLabels.count)")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                    .popover(isPresented: $showLabelFilter) {
+                        LabelFilterPopover(
+                            labels: store.board.labels,
+                            selectedLabels: $store.filterLabels
+                        )
+                    }
+                    .help("Filter by labels")
+
+                    // Clear all filters button (only shown when filtering)
+                    if store.isFiltering {
+                        Button(action: {
+                            store.clearFilters()
+                        }) {
+                            Image(systemName: "xmark.circle")
+                        }
+                        .help("Clear all filters")
+                    }
+
+                    Divider()
+                }
+            }
+
             ToolbarItemGroup(placement: .automatic) {
                 // Archive button - enabled when cards selected, also accepts drag
                 ArchiveToolbarButton(
@@ -399,6 +480,11 @@ struct BoardView: View {
                 }
                 return navigationController.handleCmdDelete(currentSelection: currentSelection)
             }
+
+            // Cmd+F focuses search field
+            if keyChar == "f" || keyChar == "F" {
+                return .focusSearch
+            }
         }
 
         // Regular keys
@@ -492,6 +578,10 @@ struct BoardView: View {
             try? store.moveCards(cards, toColumn: targetColumn.id)
             return true
 
+        case .focusSearch:
+            isSearchFocused = true
+            return true
+
         case .none:
             return false
         }
@@ -540,6 +630,10 @@ struct BoardView: View {
 struct ColumnView: View {
     let column: Column
     let cards: [Card]
+    /// Total card count in column (before filtering), used to show "X of Y" when filtering
+    let allCardsCount: Int
+    /// Whether any filter is currently active
+    let isFiltering: Bool
     let labels: [CardLabel]
     let columnWidth: CGFloat
 
@@ -589,13 +683,24 @@ struct ColumnView: View {
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                Text("\(cards.count)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.2))
-                    .clipShape(Capsule())
+                // Card count - show "X of Y" when filtering
+                if isFiltering {
+                    Text("\(cards.count) of \(allCardsCount)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.2))
+                        .clipShape(Capsule())
+                } else {
+                    Text("\(cards.count)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.2))
+                        .clipShape(Capsule())
+                }
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -1272,6 +1377,65 @@ struct DeleteToolbarButton: View {
             RoundedRectangle(cornerRadius: 6)
                 .stroke(isTargeted ? Color.red : Color.clear, lineWidth: 2)
         )
+    }
+}
+
+// MARK: - Label Filter Popover
+
+/// Popover for selecting labels to filter by.
+///
+/// Shows a list of all available labels with checkboxes.
+/// Cards must have ALL selected labels to be shown (AND logic).
+struct LabelFilterPopover: View {
+    let labels: [CardLabel]
+    @Binding var selectedLabels: Set<String>
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Filter by Labels")
+                .font(.headline)
+                .padding(.bottom, 4)
+
+            if labels.isEmpty {
+                Text("No labels defined")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .italic()
+            } else {
+                Text("Cards matching all selected labels:")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ForEach(labels, id: \.id) { label in
+                    let isSelected: Bool = selectedLabels.contains(label.id)
+                    Button(action: {
+                        if isSelected {
+                            selectedLabels.remove(label.id)
+                        } else {
+                            selectedLabels.insert(label.id)
+                        }
+                    }) {
+                        HStack(spacing: 8) {
+                            Image(systemName: isSelected ? "checkmark.square.fill" : "square")
+                                .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                            LabelChip(labelID: label.id, labels: labels)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                if !selectedLabels.isEmpty {
+                    Divider()
+                    Button("Clear Filter") {
+                        selectedLabels.removeAll()
+                    }
+                    .font(.caption)
+                }
+            }
+        }
+        .padding()
+        .frame(minWidth: 200)
     }
 }
 
