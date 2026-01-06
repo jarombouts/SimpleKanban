@@ -64,6 +64,7 @@ SimpleKanban is built for keyboard-driven workflows:
 | `↑` `↓` | Navigate cards in column |
 | `←` `→` | Navigate between columns |
 | `h` `j` `k` `l` | Vim-style navigation (←↓↑→) |
+| `0` / `G` | Vim-style first / last card in column |
 | `Shift+↑` / `Shift+↓` | Extend selection up / down |
 | `Home` / `End` | Jump to first / last card in column |
 | `Option+↑` / `Option+↓` | Page navigation (jump 5 cards) |

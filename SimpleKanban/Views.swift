@@ -28,6 +28,7 @@ extension String: @retroactive Identifiable {
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
 /// - h/j/k/l: Vim-style navigation (left/down/up/right)
+/// - 0/G/$: Vim-style first/last card (like Home/End)
 /// - Shift+Up/Down: Extend selection up/down (multi-select)
 /// - Space: Toggle card in/out of multi-selection
 /// - Home/End: Jump to first/last card in current column
@@ -700,7 +701,7 @@ struct BoardView: View {
             }
         }
 
-        // Vim-style navigation (h/j/k/l) - only when no modifiers pressed
+        // Vim-style navigation (h/j/k/l, 0/G/$) - only when no modifiers pressed
         if keyPress.modifiers.isEmpty {
             let keyChar: Character = keyPress.key.character
             switch keyChar {
@@ -712,6 +713,12 @@ struct BoardView: View {
                 return navigationController.handleArrowLeft(currentSelection: currentSelection)
             case "l", "L":
                 return navigationController.handleArrowRight(currentSelection: currentSelection)
+            case "0":
+                // Vim: 0 goes to first item (like Home)
+                return navigationController.handleHome(currentSelection: currentSelection)
+            case "G", "$":
+                // Vim: G or $ goes to last item (like End)
+                return navigationController.handleEnd(currentSelection: currentSelection)
             default:
                 break
             }
