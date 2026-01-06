@@ -62,6 +62,12 @@ enum NavigationResult: Equatable {
     /// Reorder card down within its column (Cmd+Down)
     case reorderCardDown(cardTitle: String)
 
+    /// Move card to previous column (Cmd+Left)
+    case moveCardToPreviousColumn(cardTitle: String)
+
+    /// Move card to next column (Cmd+Right)
+    case moveCardToNextColumn(cardTitle: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -411,6 +417,56 @@ class KeyboardNavigationController {
         }
 
         return .reorderCardDown(cardTitle: title)
+    }
+
+    /// Handles Cmd+Left arrow key press.
+    ///
+    /// Moves the selected card to the previous column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowLeft(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Find current column index
+        guard let currentColumnIndex = layoutProvider.columns.firstIndex(where: { $0.id == card.column }) else {
+            return .none
+        }
+
+        // Can't move left if already in first column
+        if currentColumnIndex == 0 {
+            return .none
+        }
+
+        return .moveCardToPreviousColumn(cardTitle: title)
+    }
+
+    /// Handles Cmd+Right arrow key press.
+    ///
+    /// Moves the selected card to the next column.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating what action to take
+    func handleCmdArrowRight(currentSelection: String?) -> NavigationResult {
+        guard let title = currentSelection,
+              let card = layoutProvider.card(withTitle: title) else {
+            return .none
+        }
+
+        // Find current column index
+        guard let currentColumnIndex = layoutProvider.columns.firstIndex(where: { $0.id == card.column }) else {
+            return .none
+        }
+
+        // Can't move right if already in last column
+        if currentColumnIndex >= layoutProvider.columns.count - 1 {
+            return .none
+        }
+
+        return .moveCardToNextColumn(cardTitle: title)
     }
 
     // MARK: - Private Navigation Helpers

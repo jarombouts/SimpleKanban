@@ -33,7 +33,11 @@ extension String: @retroactive Identifiable {
 /// - Cmd+Backspace: Archive selected card
 /// - Cmd+1/2/3...: Move selected card to column 1/2/3...
 /// - Cmd+Up/Down: Reorder card within column (move up/down)
+/// - Cmd+Left/Right: Move card to previous/next column
 /// - Cmd+Shift+N: Create new card in current column
+/// - Cmd+A: Select all cards in current column
+/// - Cmd+D: Duplicate selected card(s)
+/// - Cmd+F: Focus search field
 /// - Escape: Clear selection
 struct BoardView: View {
     @Bindable var store: BoardStore
@@ -621,6 +625,22 @@ struct BoardView: View {
                 return .none
             }
 
+            // Cmd+Left moves card to previous column (single selection only)
+            if keyPress.key == .leftArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowLeft(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
+            // Cmd+Right moves card to next column (single selection only)
+            if keyPress.key == .rightArrow {
+                if selectedCardTitles.count <= 1 {
+                    return navigationController.handleCmdArrowRight(currentSelection: currentSelection)
+                }
+                return .none
+            }
+
             // Cmd+F focuses search field
             if keyChar == "f" || keyChar == "F" {
                 return .focusSearch
@@ -759,6 +779,24 @@ struct BoardView: View {
                     // Move to the position after the next card (index + 2 because we're inserting)
                     try? store.moveCard(card, toColumn: card.column, atIndex: currentIndex + 2)
                 }
+            }
+            return true
+
+        case .moveCardToPreviousColumn(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let currentColumnIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+               currentColumnIndex > 0 {
+                let previousColumn: Column = store.board.columns[currentColumnIndex - 1]
+                try? store.moveCard(card, toColumn: previousColumn.id, atIndex: nil)
+            }
+            return true
+
+        case .moveCardToNextColumn(let cardTitle):
+            if let card = store.card(withTitle: cardTitle),
+               let currentColumnIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+               currentColumnIndex < store.board.columns.count - 1 {
+                let nextColumn: Column = store.board.columns[currentColumnIndex + 1]
+                try? store.moveCard(card, toColumn: nextColumn.id, atIndex: nil)
             }
             return true
 

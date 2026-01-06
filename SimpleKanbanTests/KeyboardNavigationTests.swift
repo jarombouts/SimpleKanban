@@ -1069,6 +1069,189 @@ class HomeEndNavigationTests: XCTestCase {
     }
 }
 
+// MARK: - Cmd+Left/Right Move Column Tests
+
+class CmdArrowMoveColumnTests: XCTestCase {
+
+    /// Helper to create a mock layout provider
+    func makeStandardLayout() -> MockBoardLayoutProvider {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "in-progress", name: "In Progress"),
+            Column(id: "done", name: "Done")
+        ]
+        return provider
+    }
+
+    /// Helper to create a card
+    func makeCard(title: String, column: String, position: String = "n") -> Card {
+        return Card(
+            title: title,
+            column: column,
+            position: position,
+            created: Date(),
+            modified: Date(),
+            labels: [],
+            body: ""
+        )
+    }
+
+    /// Test: Cmd+Left returns moveCardToPreviousColumn for card not in first column
+    func testCmdLeftReturnsMoveForMiddleColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "in-progress", position: "n")
+        ], forColumn: "in-progress")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowLeft(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToPreviousColumn(cardTitle: "Card A"))
+    }
+
+    /// Test: Cmd+Left returns none for card in first column
+    func testCmdLeftReturnsNoneForFirstColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowLeft(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Left returns none with no selection
+    func testCmdLeftReturnsNoneWithNoSelection() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "in-progress", position: "n")
+        ], forColumn: "in-progress")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowLeft(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Right returns moveCardToNextColumn for card not in last column
+    func testCmdRightReturnsMoveForMiddleColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "in-progress", position: "n")
+        ], forColumn: "in-progress")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowRight(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToNextColumn(cardTitle: "Card A"))
+    }
+
+    /// Test: Cmd+Right returns none for card in last column
+    func testCmdRightReturnsNoneForLastColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "done", position: "n")
+        ], forColumn: "done")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowRight(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Right returns none with no selection
+    func testCmdRightReturnsNoneWithNoSelection() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "in-progress", position: "n")
+        ], forColumn: "in-progress")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowRight(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Cmd+Left from last column moves to middle
+    func testCmdLeftFromLastColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "done", position: "n")
+        ], forColumn: "done")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowLeft(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToPreviousColumn(cardTitle: "Card A"))
+    }
+
+    /// Test: Cmd+Right from first column moves to middle
+    func testCmdRightFromFirstColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowRight(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToNextColumn(cardTitle: "Card A"))
+    }
+
+    /// Test: Cmd+Left/Right returns none for nonexistent card
+    func testCmdArrowsReturnNoneForNonexistentCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "in-progress", position: "n")
+        ], forColumn: "in-progress")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+
+        let leftResult: NavigationResult = controller.handleCmdArrowLeft(currentSelection: "Nonexistent")
+        let rightResult: NavigationResult = controller.handleCmdArrowRight(currentSelection: "Nonexistent")
+
+        XCTAssertEqual(leftResult, .none)
+        XCTAssertEqual(rightResult, .none)
+    }
+
+    /// Test: Two columns - Cmd+Left from second column works
+    func testCmdLeftWithTwoColumns() {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "done", name: "Done")
+        ]
+        provider.setCards([
+            makeCard(title: "Card A", column: "done", position: "n")
+        ], forColumn: "done")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowLeft(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToPreviousColumn(cardTitle: "Card A"))
+    }
+
+    /// Test: Two columns - Cmd+Right from first column works
+    func testCmdRightWithTwoColumns() {
+        let provider: MockBoardLayoutProvider = MockBoardLayoutProvider()
+        provider.columns = [
+            Column(id: "todo", name: "To Do"),
+            Column(id: "done", name: "Done")
+        ]
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleCmdArrowRight(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .moveCardToNextColumn(cardTitle: "Card A"))
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {
