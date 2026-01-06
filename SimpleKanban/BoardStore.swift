@@ -284,6 +284,32 @@ public final class BoardStore: @unchecked Sendable {
         cards[index].modified = Date()
 
         try CardWriter.save(cards[index], in: url, previousTitle: oldTitle)
+
+        // Register undo action: restore old title
+        registerUndoForUpdateTitle(newTitle: title, oldTitle: oldTitle)
+    }
+
+    /// Registers an undo action for updating a card's title.
+    /// Undo will restore the old title; redo will apply the new title again.
+    private func registerUndoForUpdateTitle(newTitle: String, oldTitle: String) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore old title
+            guard let index = store.cards.firstIndex(where: { $0.title == newTitle }) else { return }
+            store.cards[index].title = oldTitle
+            store.cards[index].modified = Date()
+            try? CardWriter.save(store.cards[index], in: store.url, previousTitle: newTitle)
+
+            // Register redo: apply new title again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                guard let index = store.cards.firstIndex(where: { $0.title == oldTitle }) else { return }
+                store.cards[index].title = newTitle
+                store.cards[index].modified = Date()
+                try? CardWriter.save(store.cards[index], in: store.url, previousTitle: oldTitle)
+                store.registerUndoForUpdateTitle(newTitle: newTitle, oldTitle: oldTitle)
+            }
+            store.undoManager?.setActionName("Rename Card")
+        }
+        undoManager?.setActionName("Rename Card")
     }
 
     /// Updates a card's body content.
@@ -296,10 +322,38 @@ public final class BoardStore: @unchecked Sendable {
             return
         }
 
+        let cardTitle: String = cards[index].title
+        let oldBody: String = cards[index].body
         cards[index].body = body
         cards[index].modified = Date()
 
         try CardWriter.save(cards[index], in: url)
+
+        // Register undo action: restore old body
+        registerUndoForUpdateBody(cardTitle: cardTitle, newBody: body, oldBody: oldBody)
+    }
+
+    /// Registers an undo action for updating a card's body.
+    /// Undo will restore the old body; redo will apply the new body again.
+    private func registerUndoForUpdateBody(cardTitle: String, newBody: String, oldBody: String) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore old body
+            guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+            store.cards[index].body = oldBody
+            store.cards[index].modified = Date()
+            try? CardWriter.save(store.cards[index], in: store.url)
+
+            // Register redo: apply new body again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+                store.cards[index].body = newBody
+                store.cards[index].modified = Date()
+                try? CardWriter.save(store.cards[index], in: store.url)
+                store.registerUndoForUpdateBody(cardTitle: cardTitle, newBody: newBody, oldBody: oldBody)
+            }
+            store.undoManager?.setActionName("Edit Card")
+        }
+        undoManager?.setActionName("Edit Card")
     }
 
     /// Updates a card's labels.
@@ -312,10 +366,38 @@ public final class BoardStore: @unchecked Sendable {
             return
         }
 
+        let cardTitle: String = cards[index].title
+        let oldLabels: [String] = cards[index].labels
         cards[index].labels = labels
         cards[index].modified = Date()
 
         try CardWriter.save(cards[index], in: url)
+
+        // Register undo action: restore old labels
+        registerUndoForUpdateLabels(cardTitle: cardTitle, newLabels: labels, oldLabels: oldLabels)
+    }
+
+    /// Registers an undo action for updating a card's labels.
+    /// Undo will restore the old labels; redo will apply the new labels again.
+    private func registerUndoForUpdateLabels(cardTitle: String, newLabels: [String], oldLabels: [String]) {
+        undoManager?.registerUndo(withTarget: self) { store in
+            // Undo: restore old labels
+            guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+            store.cards[index].labels = oldLabels
+            store.cards[index].modified = Date()
+            try? CardWriter.save(store.cards[index], in: store.url)
+
+            // Register redo: apply new labels again
+            store.undoManager?.registerUndo(withTarget: store) { store in
+                guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+                store.cards[index].labels = newLabels
+                store.cards[index].modified = Date()
+                try? CardWriter.save(store.cards[index], in: store.url)
+                store.registerUndoForUpdateLabels(cardTitle: cardTitle, newLabels: newLabels, oldLabels: oldLabels)
+            }
+            store.undoManager?.setActionName("Edit Card Labels")
+        }
+        undoManager?.setActionName("Edit Card Labels")
     }
 
     /// Moves a card to a different column and/or position.

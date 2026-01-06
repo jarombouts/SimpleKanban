@@ -1150,4 +1150,179 @@ struct BoardStoreUndoTests {
         try store.deleteCard(store.cards[0])
         #expect(store.cards.count == 0)
     }
+
+    @Test("Undo title change restores original title")
+    func undoTitleChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Original Title", toColumn: "todo")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], title: "New Title")
+        #expect(store.cards[0].title == "New Title")
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Rename Card")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].title == "Original Title")
+        // Verify file was renamed back
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/original-title.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Redo title change reapplies new title")
+    func redoTitleChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Original Title", toColumn: "todo")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], title: "New Title")
+        undoManager.undo()
+        #expect(store.cards[0].title == "Original Title")
+
+        undoManager.redo()
+
+        #expect(store.cards[0].title == "New Title")
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
+    }
+
+    @Test("Undo body change restores original body")
+    func undoBodyChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", body: "Original body content")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], body: "New body content")
+        #expect(store.cards[0].body == "New body content")
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Edit Card")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].body == "Original body content")
+    }
+
+    @Test("Redo body change reapplies new body")
+    func redoBodyChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", body: "Original body")
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], body: "New body")
+        undoManager.undo()
+        #expect(store.cards[0].body == "Original body")
+
+        undoManager.redo()
+
+        #expect(store.cards[0].body == "New body")
+    }
+
+    @Test("Undo labels change restores original labels")
+    func undoLabelsChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], labels: ["feature", "urgent"])
+        #expect(store.cards[0].labels == ["feature", "urgent"])
+        #expect(undoManager.canUndo)
+        #expect(undoManager.undoActionName == "Edit Card Labels")
+
+        undoManager.undo()
+
+        #expect(store.cards[0].labels == ["bug"])
+    }
+
+    @Test("Redo labels change reapplies new labels")
+    func redoLabelsChange() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "My Card", toColumn: "todo", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        try store.updateCard(store.cards[0], labels: ["feature"])
+        undoManager.undo()
+        #expect(store.cards[0].labels == ["bug"])
+
+        undoManager.redo()
+
+        #expect(store.cards[0].labels == ["feature"])
+    }
+
+    @Test("Multiple edit undos work correctly")
+    func multipleEditUndos() throws {
+        let tempDir: URL = try createTempBoardDirectory()
+        defer { cleanup(tempDir) }
+
+        let undoManager: UndoManager = UndoManager()
+        let store: BoardStore = try BoardStore(url: tempDir)
+        store.undoManager = undoManager
+
+        try store.addCard(title: "Card", toColumn: "todo", body: "Body", labels: ["bug"])
+        undoManager.removeAllActions()
+
+        // Make multiple edits
+        try store.updateCard(store.cards[0], title: "New Card")
+        try store.updateCard(store.cards[0], body: "New Body")
+        try store.updateCard(store.cards[0], labels: ["feature"])
+
+        #expect(store.cards[0].title == "New Card")
+        #expect(store.cards[0].body == "New Body")
+        #expect(store.cards[0].labels == ["feature"])
+
+        // Undo all three edits in reverse order
+        undoManager.undo() // labels
+        #expect(store.cards[0].labels == ["bug"])
+
+        undoManager.undo() // body
+        #expect(store.cards[0].body == "Body")
+
+        undoManager.undo() // title
+        #expect(store.cards[0].title == "Card")
+
+        // Redo all
+        undoManager.redo()
+        undoManager.redo()
+        undoManager.redo()
+
+        #expect(store.cards[0].title == "New Card")
+        #expect(store.cards[0].body == "New Body")
+        #expect(store.cards[0].labels == ["feature"])
+    }
 }
