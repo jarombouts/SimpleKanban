@@ -74,6 +74,9 @@ enum NavigationResult: Equatable {
     /// Extend selection down to include the next card (Shift+Down)
     case extendSelectionDown(toCardTitle: String)
 
+    /// Toggle card in/out of multi-selection (Space bar)
+    case toggleCardInSelection(cardTitle: String)
+
     /// No action taken (key not handled or no valid action)
     case none
 }
@@ -598,6 +601,28 @@ class KeyboardNavigationController {
         }
 
         return .moveCardToNextColumn(cardTitle: title)
+    }
+
+    /// Handles Space bar key press.
+    ///
+    /// Toggles the currently selected card in/out of the multi-selection.
+    /// This allows keyboard-driven multi-select similar to Cmd+Click but more ergonomic.
+    /// If no card is currently selected, selects the first card.
+    ///
+    /// - Parameter currentSelection: Title of currently selected card, or nil
+    /// - Returns: Navigation result indicating to toggle the card in selection
+    func handleSpace(currentSelection: String?) -> NavigationResult {
+        // If there's no selection, select the first card
+        guard let title = currentSelection else {
+            return selectFirstCard()
+        }
+
+        // Verify the card exists
+        guard layoutProvider.card(withTitle: title) != nil else {
+            return selectFirstCard()
+        }
+
+        return .toggleCardInSelection(cardTitle: title)
     }
 
     // MARK: - Private Navigation Helpers

@@ -28,6 +28,7 @@ extension String: @retroactive Identifiable {
 /// Keyboard navigation:
 /// - Arrow keys: Navigate between cards (up/down) and columns (left/right)
 /// - Shift+Up/Down: Extend selection up/down (multi-select)
+/// - Space: Toggle card in/out of multi-selection
 /// - Home/End: Jump to first/last card in current column
 /// - Option+Up/Down: Page navigation (jump 5 cards)
 /// - Enter: Open selected card for editing
@@ -725,6 +726,8 @@ struct BoardView: View {
             return navigationController.handleHome(currentSelection: currentSelection)
         case .end:
             return navigationController.handleEnd(currentSelection: currentSelection)
+        case .space:
+            return navigationController.handleSpace(currentSelection: currentSelection)
         default:
             return .none
         }
@@ -748,6 +751,11 @@ struct BoardView: View {
         case .extendSelectionDown(let toCardTitle):
             // Extend selection using selectRange (like Shift+Click)
             selectRange(to: toCardTitle)
+            return true
+
+        case .toggleCardInSelection(let cardTitle):
+            // Toggle card in/out of multi-selection (like Cmd+Click but via Space bar)
+            toggleSelection(cardTitle)
             return true
 
         case .selectionCleared:

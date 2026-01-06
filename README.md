@@ -91,6 +91,7 @@ SimpleKanban is built for keyboard-driven workflows:
 
 | Key | Action |
 |-----|--------|
+| `Space` | Toggle card in/out of selection |
 | `Cmd+A` | Select all cards in current column |
 | `Cmd+F` | Focus search field |
 

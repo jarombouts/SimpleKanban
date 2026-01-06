@@ -1616,6 +1616,114 @@ class ShiftArrowExtendSelectionTests: XCTestCase {
     }
 }
 
+// MARK: - Space Bar Toggle Selection Tests
+
+/// Tests for Space bar toggle selection functionality.
+///
+/// Space bar toggles the current card in/out of the multi-selection,
+/// similar to Cmd+Click but more ergonomic for keyboard users.
+class SpaceToggleSelectionTests: XCTestCase {
+
+    /// Test: Space with a selected card returns toggle result
+    func testSpaceWithSelectionReturnsToggle() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: "Card A")
+
+        XCTAssertEqual(result, .toggleCardInSelection(cardTitle: "Card A"))
+    }
+
+    /// Test: Space with no selection selects first card
+    func testSpaceNoSelectionSelectsFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: nil)
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Space with nonexistent card selects first card
+    func testSpaceNonexistentCardSelectsFirstCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: "Nonexistent")
+
+        XCTAssertEqual(result, .selectionChanged(cardTitle: "Card A"))
+    }
+
+    /// Test: Space on empty board returns none
+    func testSpaceEmptyBoardReturnsNone() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        // No cards in any column
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: nil)
+
+        XCTAssertEqual(result, .none)
+    }
+
+    /// Test: Space toggles last card in column
+    func testSpaceTogglesLastCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: "Card C")
+
+        XCTAssertEqual(result, .toggleCardInSelection(cardTitle: "Card C"))
+    }
+
+    /// Test: Space toggles middle card in column
+    func testSpaceTogglesMiddleCard() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "a"),
+            makeCard(title: "Card B", column: "todo", position: "n"),
+            makeCard(title: "Card C", column: "todo", position: "z")
+        ], forColumn: "todo")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .toggleCardInSelection(cardTitle: "Card B"))
+    }
+
+    /// Test: Space toggles card in different column
+    func testSpaceTogglesCardInDifferentColumn() {
+        let provider: MockBoardLayoutProvider = makeStandardLayout()
+        provider.setCards([
+            makeCard(title: "Card A", column: "todo", position: "n")
+        ], forColumn: "todo")
+        provider.setCards([
+            makeCard(title: "Card B", column: "doing", position: "n")
+        ], forColumn: "doing")
+
+        let controller: KeyboardNavigationController = KeyboardNavigationController(layoutProvider: provider)
+        let result: NavigationResult = controller.handleSpace(currentSelection: "Card B")
+
+        XCTAssertEqual(result, .toggleCardInSelection(cardTitle: "Card B"))
+    }
+}
+
 // MARK: - NavigationResult Equatable
 
 extension NavigationResult {
