@@ -6,7 +6,7 @@ This document describes the architecture, structure, and implementation details 
 
 ## Overview
 
-SimpleKanban is a native macOS Kanban board application built with Swift/SwiftUI. It stores all data as human-readable markdown files, designed for git-based collaboration and version control.
+SimpleKanban is a native Kanban board application built with Swift/SwiftUI for macOS and iOS (iPad). It stores all data as human-readable markdown files, designed for git-based collaboration and version control.
 
 **Key design principles:**
 - No external dependencies - pure Swift/SwiftUI
@@ -20,26 +20,41 @@ SimpleKanban is a native macOS Kanban board application built with Swift/SwiftUI
 SimpleKanban/
 ├── .github/
 │   └── workflows/
-│       └── test.yml            # GitHub Actions CI - runs tests on push/PR
-├── SimpleKanban/               # Main application source
-│   ├── SimpleKanbanApp.swift   # App entry point, window management, WelcomeView
-│   ├── BoardStore.swift        # In-memory state management, @Observable
-│   ├── Models.swift            # Data structures: Card, Board, Column, CardLabel
-│   ├── FileSystem.swift        # File I/O: BoardLoader, CardWriter, BoardWriter
-│   ├── FileWatcher.swift       # Monitors files for external changes
-│   ├── KeyboardNavigation.swift # Keyboard navigation controller (testable)
-│   └── Views.swift             # UI: BoardView, ColumnView, CardView, CardDetailView
-├── SimpleKanbanTests/          # Test suite
-│   ├── ParserTests.swift       # Card and board parsing tests
-│   ├── FileSystemTests.swift   # File operations tests
-│   ├── BoardStoreTests.swift   # State management tests
+│       └── test.yml              # GitHub Actions CI - runs tests on push/PR
+├── Shared/                       # Shared Swift Package for multi-platform
+│   ├── Package.swift
+│   └── Sources/SimpleKanbanCore/
+│       ├── Models.swift          # Card, Board, Column, CardLabel
+│       ├── FileSystem.swift      # BoardLoader, CardWriter, BoardWriter
+│       ├── BoardStore.swift      # Core state management
+│       └── Protocols.swift       # Platform abstraction protocols
+├── SimpleKanban/                 # macOS application source
+│   ├── SimpleKanbanApp.swift     # App entry point, window management, WelcomeView
+│   ├── BoardStore.swift          # macOS-specific extensions
+│   ├── Models.swift              # macOS-specific extensions
+│   ├── FileSystem.swift          # macOS-specific extensions
+│   ├── FileWatcher.swift         # FSEvents-based file monitoring
+│   ├── GitSync.swift             # Git status, auto-sync, push
+│   ├── KeyboardNavigation.swift  # Keyboard navigation controller (testable)
+│   └── Views.swift               # UI: BoardView, ColumnView, CardView, etc.
+├── SimpleKanbanIOS/              # iOS (iPad) application source
+│   ├── SimpleKanbanIOSApp.swift  # iOS app entry point
+│   ├── IOSViews.swift            # Touch-optimized UI views
+│   ├── IOSFileWatcher.swift      # Polling-based file monitoring
+│   ├── IOSCloudSync.swift        # iCloud sync support
+│   └── IOSDocumentPicker.swift   # Document picker integration
+├── SimpleKanbanTests/            # Test suite
+│   ├── ParserTests.swift         # Card and board parsing tests
+│   ├── FileSystemTests.swift     # File operations tests
+│   ├── BoardStoreTests.swift     # State management tests
+│   ├── GitSyncTests.swift        # Git sync tests
 │   └── KeyboardNavigationTests.swift  # Keyboard navigation tests (40+ cases)
-├── SimpleKanban.xcodeproj/     # Xcode project
-├── SimpleKanbanBacklog/        # Our own backlog (dogfooding)
-├── LICENSE                     # WTFPL license
-├── CLAUDE.md                   # AI assistant guidelines
-├── roadmap.md                  # Implementation plan with progress
-└── DEVELOPMENT.md              # This file
+├── SimpleKanban.xcodeproj/       # Xcode project (multi-target)
+├── LICENSE                       # WTFPL license
+├── CLAUDE.md                     # AI assistant guidelines
+├── roadmap.md                    # Implementation plan with progress
+├── iOS-SUPPORT-PLAN.md           # iOS implementation plan
+└── DEVELOPMENT.md                # This file
 ```
 
 ## Architecture
@@ -67,9 +82,17 @@ SimpleKanban/
                                           ▼
                                ┌──────────────────────────────┐
                                │ FileWatcher (FileWatcher.swift)│
-                               │ DispatchSource file monitoring│
+                               │ FSEvents file monitoring      │
+                               └──────────────────────────────┘
+                                          │
+                                          ▼
+                               ┌──────────────────────────────┐
+                               │   GitSync (GitSync.swift)    │
+                               │ Git status, auto-fetch, push │
                                └──────────────────────────────┘
 ```
+
+**Note:** iOS uses a parallel architecture with `IOSViews.swift`, `IOSFileWatcher.swift` (polling-based), and `IOSCloudSync.swift` (iCloud) instead of GitSync.
 
 ### Component Responsibilities
 
@@ -231,6 +254,9 @@ archive/2024-01-05-fix-login-bug.md
 - Auto-load last opened board on startup
 - Welcome screen (WelcomeView) with recent boards sidebar
 - Window close behavior: closing board view returns to welcome screen instead of quitting
+- Search & filter (Cmd+F, search title/body/labels, click label to filter)
+- Column collapse/expand
+- Dark mode support (follows system)
 - Full keyboard navigation:
   - Arrow keys to navigate cards (up/down within column, left/right between columns)
   - Cmd+1/2/3 to move selected card(s) to column
@@ -252,11 +278,17 @@ archive/2024-01-05-fix-login-bug.md
   - Push button with confirmation dialog
   - Conflicts shown as error — resolve in terminal
 
+### iOS Support (In Progress)
+- Shared Swift Package created for cross-platform code
+- iOS target with touch-optimized views
+- Drag & drop, swipe actions, context menus
+- iCloud sync infrastructure
+- See `iOS-SUPPORT-PLAN.md` for detailed status
+
 ### Not Yet Implemented
-- Search/filter
 - Card archive UI (viewing archived cards)
-- Column collapse/expand
-- Dark mode refinements
+- iOS: multi-select and bulk operations
+- iOS: hardware keyboard shortcuts
 
 ## Testing
 

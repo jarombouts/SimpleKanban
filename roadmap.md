@@ -212,6 +212,29 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 
 **Deliverable:** A tool you actually want to use every day.
 
+## Phase 6: iOS Support (In Progress)
+
+**Goal:** Multi-platform support for iPad with iCloud sync.
+
+See `iOS-SUPPORT-PLAN.md` for detailed implementation plan.
+
+### Current Status
+- [x] Shared Swift Package (`Shared/SimpleKanbanCore`) with Models, FileSystem, BoardStore
+- [x] iOS target structure (`SimpleKanbanIOS/`)
+- [x] iOS views with touch-optimized UI
+- [x] Drag & drop between columns
+- [x] Swipe actions (archive, delete)
+- [x] Context menus for cards
+- [x] iCloud sync infrastructure
+- [x] Polling-based file watcher for iOS
+- [ ] Multi-select and bulk operations
+- [ ] Hardware keyboard shortcuts
+- [ ] Full feature parity with macOS
+
+**Note:** Requires manual Xcode setup to integrate — see iOS-SUPPORT-PLAN.md for steps.
+
+---
+
 ## Future Ideas (Not in Scope)
 
 - Due dates with reminders
@@ -219,7 +242,7 @@ A native macOS Kanban board with markdown-based persistence for git-friendly col
 - Board templates
 - Export to other formats
 - Sync service integration
-- iOS companion app
+- iPhone support (iPad-only for now)
 
 ---
 
