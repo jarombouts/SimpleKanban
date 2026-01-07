@@ -182,6 +182,8 @@ struct IOSBoardView: View {
 // MARK: - Column View
 
 /// A single column displaying cards vertically.
+///
+/// Supports drag & drop for reordering cards and moving between columns.
 struct IOSColumnView: View {
     let column: Column
     let cards: [Card]
@@ -192,6 +194,9 @@ struct IOSColumnView: View {
 
     /// Width for columns on iPad
     private let columnWidth: CGFloat = 320
+
+    /// Currently dragging card title (for visual feedback)
+    @State private var draggingCard: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -218,17 +223,44 @@ struct IOSColumnView: View {
             .padding()
             .background(.regularMaterial)
 
-            // Cards list
-            ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(cards, id: \.title) { card in
+            // Cards list with drop and swipe support
+            // Using List for native swipe actions support
+            List {
+                ForEach(cards, id: \.title) { card in
                         IOSCardView(
                             card: card,
                             isSelected: selectedTitles.contains(card.title),
-                            labels: store.board.labels
+                            labels: store.board.labels,
+                            isDragging: draggingCard == card.title
                         )
                         .onTapGesture {
                             onCardTap(card)
+                        }
+                        .onDrag {
+                            draggingCard = card.title
+                            return NSItemProvider(object: card.title as NSString)
+                        }
+                        .onDrop(of: [.text], delegate: CardDropDelegate(
+                            targetCard: card,
+                            targetColumn: column.id,
+                            store: store,
+                            draggingCard: $draggingCard
+                        ))
+                        // Swipe actions for quick card operations
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                try? store.deleteCard(card)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                            Button {
+                                try? store.archiveCard(card)
+                            } label: {
+                                Label("Archive", systemImage: "archivebox")
+                            }
+                            .tint(.orange)
                         }
                         .contextMenu {
                             Button {
@@ -237,36 +269,68 @@ struct IOSColumnView: View {
                                 Label("Edit", systemImage: "pencil")
                             }
 
-                            Button(role: .destructive) {
-                                try? store.deleteCard(card)
+                            Button {
+                                try? store.duplicateCard(card)
                             } label: {
-                                Label("Delete", systemImage: "trash")
+                                Label("Duplicate", systemImage: "doc.on.doc")
                             }
+
+                            // Move to column submenu
+                            Menu {
+                                ForEach(store.board.columns, id: \.id) { col in
+                                    if col.id != column.id {
+                                        Button {
+                                            try? store.moveCard(card, toColumn: col.id)
+                                        } label: {
+                                            Text(col.name)
+                                        }
+                                    }
+                                }
+                            } label: {
+                                Label("Move to...", systemImage: "arrow.right.square")
+                            }
+
+                            Divider()
 
                             Button {
                                 try? store.archiveCard(card)
                             } label: {
                                 Label("Archive", systemImage: "archivebox")
                             }
+
+                            Button(role: .destructive) {
+                                try? store.deleteCard(card)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
                         }
                     }
                 }
-                .padding()
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
             }
         }
         .frame(width: columnWidth)
         .background(Color(.systemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
+        .onDrop(of: [.text], delegate: ColumnEndDropDelegate(
+            targetColumn: column.id,
+            store: store,
+            draggingCard: $draggingCard
+        ))
     }
 }
 
 // MARK: - Card View
 
 /// A single card in a column.
+///
+/// Supports drag & drop for reordering and moving between columns.
 struct IOSCardView: View {
     let card: Card
     let isSelected: Bool
     let labels: [CardLabel]
+    var isDragging: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -310,6 +374,7 @@ struct IOSCardView: View {
             RoundedRectangle(cornerRadius: 8)
                 .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
         )
+        .opacity(isDragging ? 0.5 : 1.0)
     }
 }
 
@@ -483,4 +548,73 @@ extension Color {
 
 extension String: @retroactive Identifiable {
     public var id: String { self }
+}
+
+// MARK: - Drag & Drop Delegates
+
+/// Drop delegate for dropping a card onto another card (inserts before target).
+struct CardDropDelegate: DropDelegate {
+    let targetCard: Card
+    let targetColumn: String
+    let store: BoardStore
+    @Binding var draggingCard: String?
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let draggedTitle = draggingCard else { return false }
+        guard let draggedCard = store.card(withTitle: draggedTitle) else { return false }
+        guard draggedCard.title != targetCard.title else { return false }
+
+        // Find the index to insert at (before the target card)
+        let targetCards: [Card] = store.cards(forColumn: targetColumn)
+        guard let targetIndex = targetCards.firstIndex(where: { $0.title == targetCard.title }) else {
+            return false
+        }
+
+        do {
+            try store.moveCard(draggedCard, toColumn: targetColumn, atIndex: targetIndex)
+            draggingCard = nil
+            return true
+        } catch {
+            print("Drop failed: \(error)")
+            return false
+        }
+    }
+
+    func dropEntered(info: DropInfo) {
+        // Could add visual feedback here
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        // Could remove visual feedback here
+    }
+}
+
+/// Drop delegate for dropping at the end of a column.
+struct ColumnEndDropDelegate: DropDelegate {
+    let targetColumn: String
+    let store: BoardStore
+    @Binding var draggingCard: String?
+
+    func performDrop(info: DropInfo) -> Bool {
+        guard let draggedTitle = draggingCard else { return false }
+        guard let draggedCard = store.card(withTitle: draggedTitle) else { return false }
+
+        do {
+            // Move to end of column (nil index = append)
+            try store.moveCard(draggedCard, toColumn: targetColumn, atIndex: nil)
+            draggingCard = nil
+            return true
+        } catch {
+            print("Drop failed: \(error)")
+            return false
+        }
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        return DropProposal(operation: .move)
+    }
 }
