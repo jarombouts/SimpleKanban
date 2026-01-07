@@ -1,8 +1,9 @@
 # SimpleKanban
 
-A native macOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows.
+A native macOS/iOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
+![iOS](https://img.shields.io/badge/iOS_(iPad)-17.0+-blue)
 ![Swift](https://img.shields.io/badge/Swift-5.9+-orange)
 ![License](https://img.shields.io/badge/license-WTFPL-green)
 
@@ -14,6 +15,7 @@ Most Kanban tools lock your data in proprietary formats or cloud services. Simpl
 - **Git-friendly** -- One file per card means minimal merge conflicts when collaborating
 - **No cloud required** -- Everything lives in a folder you control
 - **No dependencies** -- Pure Swift/SwiftUI, no external libraries
+- **Multi-platform** -- macOS with git sync, iPad with iCloud sync
 
 ## Installation
 
@@ -27,6 +29,16 @@ open SimpleKanban.xcodeproj
 ```
 
 Requires macOS 14.0+ and Xcode 16+.
+
+### iOS (iPad)
+
+iOS support is in active development. The iOS target requires manual Xcode setup:
+
+1. Clone the repository
+2. Open `SimpleKanban.xcodeproj` in Xcode
+3. Follow the setup steps in `iOS-SUPPORT-PLAN.md`
+
+The iOS version uses iCloud sync instead of git, but boards remain fully compatible markdown files.
 
 ## Usage
 
@@ -203,14 +215,22 @@ The lexicographic position system (`position: n`, `position: q`, etc.) means ins
 
 ```
 SimpleKanban/
-├── SimpleKanbanApp.swift     # App entry, window management
-├── BoardStore.swift          # @Observable state management
-├── Models.swift              # Card, Board, Column data structures
-├── FileSystem.swift          # File I/O operations
-├── FileWatcher.swift         # External change detection
-├── GitSync.swift             # Git status, auto-sync, push
-├── KeyboardNavigation.swift  # Testable navigation logic
-└── Views.swift               # SwiftUI views
+├── Shared/                   # Cross-platform Swift Package
+│   └── Sources/SimpleKanbanCore/
+│       ├── Models.swift      # Card, Board, Column data structures
+│       ├── FileSystem.swift  # File I/O operations
+│       └── BoardStore.swift  # Core state management
+├── SimpleKanban/             # macOS target
+│   ├── SimpleKanbanApp.swift # App entry, window management
+│   ├── FileWatcher.swift     # FSEvents file watching
+│   ├── GitSync.swift         # Git status, auto-sync, push
+│   ├── KeyboardNavigation.swift
+│   └── Views.swift           # SwiftUI views
+└── SimpleKanbanIOS/          # iOS target
+    ├── SimpleKanbanIOSApp.swift
+    ├── IOSViews.swift        # Touch-optimized views
+    ├── IOSFileWatcher.swift  # Polling-based watching
+    └── IOSCloudSync.swift    # iCloud sync
 ```
 
 ### Running Tests
