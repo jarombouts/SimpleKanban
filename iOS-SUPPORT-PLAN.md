@@ -39,14 +39,25 @@ These steps must be done manually in Xcode - they cannot be automated:
   - [ ] Change `@testable import SimpleKanban` to `@testable import SimpleKanbanCore` where needed
 - [ ] **Build & run tests** to verify everything works
 
-### Phase 2: Add iOS Target *(Next)*
+### Phase 2: Add iOS Target *(Files Created - Needs Xcode Setup)*
 
-- [ ] File → New → Target → App (iOS)
-- [ ] Name: `SimpleKanbanIOS`
-- [ ] Set deployment target: iOS 17.0
-- [ ] Set device: iPad only
-- [ ] Link `SimpleKanbanCore` to iOS target
-- [ ] Configure entitlements for iCloud
+The iOS source files have been created in `SimpleKanbanIOS/`. Now complete setup in Xcode:
+
+- [ ] **Create iOS target**: File → New → Target → App (iOS)
+  - Product Name: `SimpleKanbanIOS`
+  - Interface: SwiftUI
+  - Language: Swift
+- [ ] **Configure target settings**:
+  - [ ] Deployment Target: iOS 17.0
+  - [ ] Devices: iPad only (uncheck iPhone)
+  - [ ] Bundle ID: `com.yourname.SimpleKanbanIOS`
+- [ ] **Add existing files to target**:
+  - [ ] Drag `SimpleKanbanIOS/*.swift` into the new target
+  - [ ] Ensure files are added to SimpleKanbanIOS target only
+- [ ] **Link SimpleKanbanCore**: Target → General → Frameworks → Add `SimpleKanbanCore`
+- [ ] **Copy entitlements**: Use `SimpleKanbanIOS/SimpleKanbanIOS.entitlements`
+- [ ] **Copy Info.plist settings** or use the provided `SimpleKanbanIOS/Info.plist`
+- [ ] **Build & run** on iPad Simulator to verify
 
 ---
 
