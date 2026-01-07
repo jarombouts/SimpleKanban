@@ -1,8 +1,18 @@
 # iOS Support Plan for SimpleKanban
 
+## Decisions Made
+
+| Decision | Choice | Rationale |
+|----------|--------|-----------|
+| **Device** | iPad only | Focus on landscape productivity experience first |
+| **iOS Version** | 17.0+ | Best SwiftUI features, Observation framework |
+| **Sync Strategy** | iCloud only | Simpler than git, native Apple integration |
+
 ## Executive Summary
 
-This document outlines a comprehensive plan to add iOS support (iPad-first, landscape) to SimpleKanban, transforming it into a multi-platform monorepo while maintaining the git-friendly markdown file format philosophy.
+This document outlines a comprehensive plan to add iOS support (iPad-only, landscape) to SimpleKanban, transforming it into a multi-platform monorepo while maintaining the git-friendly markdown file format philosophy.
+
+**Note**: Git sync via libgit2 is deferred. iCloud provides sufficient sync for most users, and boards remain git-friendly markdown files that can be manually synced or version-controlled on macOS.
 
 ---
 
