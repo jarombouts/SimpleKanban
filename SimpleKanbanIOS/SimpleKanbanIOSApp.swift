@@ -17,11 +17,17 @@ struct SimpleKanbanIOSApp: App {
     /// File watcher for detecting external changes
     @State private var fileWatcher: IOSFileWatcher? = nil
 
+    /// iCloud sync provider for detecting cloud changes (nil when no board is open)
+    @State private var cloudSync: IOSCloudSync? = nil
+
     /// Whether to show the document picker for opening a board
     @State private var showOpenPicker: Bool = false
 
     /// Whether to show the document picker for creating a new board
     @State private var showCreatePicker: Bool = false
+
+    /// Whether to show the iCloud board creation sheet
+    @State private var showCreateInCloud: Bool = false
 
     /// Error message to display (nil when no error)
     @State private var errorMessage: String? = nil
@@ -33,11 +39,16 @@ struct SimpleKanbanIOSApp: App {
         WindowGroup {
             Group {
                 if let store = store {
-                    IOSBoardView(store: store)
+                    IOSBoardView(store: store, cloudSync: cloudSync)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarLeading) {
                                 Button("Close") {
                                     closeBoard()
+                                }
+                            }
+                            ToolbarItem(placement: .navigationBarTrailing) {
+                                if let cloudSync = cloudSync {
+                                    IOSSyncStatusView(cloudSync: cloudSync)
                                 }
                             }
                         }
@@ -46,9 +57,11 @@ struct SimpleKanbanIOSApp: App {
                         recentBoards: recentBoardsManager.recentBoards,
                         onOpenBoard: { showOpenPicker = true },
                         onCreateBoard: { showCreatePicker = true },
+                        onCreateInCloud: { showCreateInCloud = true },
                         onOpenRecentBoard: { recentBoard in
                             openRecentBoard(recentBoard)
-                        }
+                        },
+                        isCloudAvailable: IOSCloudContainer.isAvailable
                     )
                 }
             }
@@ -63,6 +76,13 @@ struct SimpleKanbanIOSApp: App {
                 IOSDocumentPicker(mode: .create) { url in
                     if let url = url {
                         createBoard(at: url)
+                    }
+                }
+            }
+            .sheet(isPresented: $showCreateInCloud) {
+                IOSCloudBoardCreator { url in
+                    if let url = url {
+                        loadBoard(from: url)
                     }
                 }
             }
@@ -113,9 +133,35 @@ struct SimpleKanbanIOSApp: App {
             watcher.start()
             fileWatcher = watcher
 
+            // Set up iCloud sync for this board
+            setupCloudSync(for: url)
+
         } catch {
             url.stopAccessingSecurityScopedResource()
             errorMessage = "Failed to open board: \(error.localizedDescription)"
+        }
+    }
+
+    /// Sets up iCloud sync for the given board URL.
+    ///
+    /// - Parameter url: The board directory URL
+    private func setupCloudSync(for url: URL) {
+        // Create a new cloud sync provider for this URL
+        let newCloudSync: IOSCloudSync = IOSCloudSync(url: url)
+        newCloudSync.onRemoteChangesDetected = {
+            // When iCloud changes are detected, sync and reload
+            Task {
+                await newCloudSync.sync()
+                // The file watcher will pick up the changes after download
+            }
+        }
+
+        // Set the cloud sync provider
+        cloudSync = newCloudSync
+
+        // Check configuration and start monitoring
+        Task {
+            await newCloudSync.checkConfiguration()
         }
     }
 
@@ -154,6 +200,9 @@ struct SimpleKanbanIOSApp: App {
     private func closeBoard() {
         fileWatcher?.stop()
         fileWatcher = nil
+
+        // Clear cloud sync provider
+        cloudSync = nil
 
         if let url = store?.url {
             url.stopAccessingSecurityScopedResource()

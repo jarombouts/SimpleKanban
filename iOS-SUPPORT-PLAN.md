@@ -345,26 +345,31 @@ SimpleKanban/
 ### Phase 6: iOS-Specific UX Polish
 **Goal**: Native iOS feel
 
-#### 6.1 Touch Gestures
-- [ ] Long-press for context menu on cards
-- [ ] Swipe actions on cards (archive, delete, move)
+#### 6.1 Touch Gestures ✅ PARTIALLY IMPLEMENTED
+- [x] Long-press for context menu on cards (with edit, duplicate, move, archive, delete)
+- [x] Swipe actions on cards (archive left, delete right)
 - [ ] Pull-to-refresh (when sync is implemented)
 - [ ] Pinch to collapse all columns (optional)
 
-#### 6.2 Multi-Select on iOS
+#### 6.2 Drag & Drop ✅ IMPLEMENTED
+- [x] Drag cards between columns
+- [x] Reorder cards within columns
+- [x] Visual feedback during drag
+
+#### 6.3 Multi-Select on iOS
 - [ ] Edit mode with checkboxes
 - [ ] Bulk actions toolbar (move, archive, delete)
 - [ ] "Select All" option
 
-#### 6.3 iPad-Specific Features
+#### 6.4 iPad-Specific Features
 - [ ] Pointer/trackpad support (hover states)
 - [ ] Hardware keyboard shortcuts (matching macOS where sensible)
 - [ ] Split View multitasking support
 - [ ] Slide Over support
 
-#### 6.4 Search and Filter
-- [ ] Search bar in toolbar
-- [ ] Real-time filtering as you type
+#### 6.5 Search and Filter ✅ IMPLEMENTED
+- [x] Search bar in toolbar
+- [x] Real-time filtering as you type
 - [ ] Label filter popover/sheet
 - [ ] Clear filters button
 
@@ -375,12 +380,13 @@ SimpleKanban/
 ### Phase 7: Sync Implementation
 **Goal**: Multi-device sync
 
-#### 7.1 iCloud Drive Integration (Recommended First)
-- [ ] Configure iCloud container entitlement
-- [ ] Store boards in iCloud Documents folder
-- [ ] Implement conflict detection (file modification dates)
-- [ ] Simple conflict UI (keep local / keep remote / merge)
-- [ ] Background sync with `NSUbiquitousKeyValueStore` for settings
+#### 7.1 iCloud Drive Integration ✅ IMPLEMENTED
+- [x] Configure iCloud container entitlement (`SimpleKanbanIOS.entitlements`)
+- [x] Store boards in iCloud Documents folder (`IOSCloudContainer`)
+- [x] Implement sync status monitoring (`IOSCloudSync` with `NSMetadataQuery`)
+- [x] Sync status UI in toolbar (`IOSSyncStatusView`)
+- [x] Create boards directly in iCloud (`IOSCloudBoardCreator`)
+- [ ] Conflict UI (future: keep local / keep remote / merge)
 
 #### 7.2 Git Integration via SwiftGit2 (Optional/Later)
 - [ ] Add SwiftGit2 package dependency
@@ -399,28 +405,29 @@ SimpleKanban/
 
 | Feature | macOS | iOS Status |
 |---------|-------|------------|
-| View board with columns | ✅ | [ ] |
-| View cards in columns | ✅ | [ ] |
-| Card detail view | ✅ | [ ] |
-| Create card | ✅ | [ ] |
-| Edit card (title, body, labels) | ✅ | [ ] |
-| Delete card | ✅ | [ ] |
-| Archive card | ✅ | [ ] |
-| Move card (drag & drop) | ✅ | [ ] |
+| View board with columns | ✅ | ✅ |
+| View cards in columns | ✅ | ✅ |
+| Card detail view | ✅ | ✅ |
+| Create card | ✅ | ✅ |
+| Edit card (title, body, labels) | ✅ | ✅ |
+| Delete card | ✅ | ✅ (swipe + context menu) |
+| Archive card | ✅ | ✅ (swipe + context menu) |
+| Move card (drag & drop) | ✅ | ✅ |
 | Move card (keyboard) | ✅ | [ ] (hardware keyboard) |
-| Card duplication | ✅ | [ ] |
+| Card duplication | ✅ | ✅ (context menu) |
 | Multi-select | ✅ | [ ] |
 | Bulk operations | ✅ | [ ] |
-| Search & filter | ✅ | [ ] |
+| Search & filter | ✅ | ✅ |
 | Label management | ✅ | [ ] |
 | Column management | ✅ | [ ] |
 | Column collapse/expand | ✅ | [ ] |
 | Undo/redo | ✅ | [ ] |
 | Keyboard navigation | ✅ | [ ] (hardware keyboard) |
 | Vim-style shortcuts | ✅ | [ ] (hardware keyboard) |
-| Git sync | ✅ | [ ] (via libgit2 or iCloud) |
-| File watching | ✅ | [ ] |
-| Recent boards | ✅ | [ ] |
+| Git sync | ✅ | N/A (macOS only) |
+| iCloud sync | N/A | ✅ |
+| File watching | ✅ | ✅ (polling-based) |
+| Recent boards | ✅ | ✅ |
 | Board settings | ✅ | [ ] |
 | Markdown syntax highlighting | ✅ | [ ] |
 

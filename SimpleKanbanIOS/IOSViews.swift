@@ -24,7 +24,9 @@ struct IOSWelcomeView: View {
     let recentBoards: [IOSRecentBoard]
     let onOpenBoard: () -> Void
     let onCreateBoard: () -> Void
+    var onCreateInCloud: (() -> Void)? = nil
     let onOpenRecentBoard: (IOSRecentBoard) -> Void
+    var isCloudAvailable: Bool = false
 
     var body: some View {
         NavigationStack {
@@ -62,6 +64,17 @@ struct IOSWelcomeView: View {
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.large)
+
+                    // iCloud option if available
+                    if isCloudAvailable, let onCreateInCloud = onCreateInCloud {
+                        Button(action: onCreateInCloud) {
+                            Label("Create in iCloud", systemImage: "icloud")
+                                .frame(minWidth: 200)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+                        .tint(.cyan)
+                    }
                 }
 
                 // Recent boards
@@ -112,6 +125,9 @@ struct IOSWelcomeView: View {
 /// - Drag and drop support
 struct IOSBoardView: View {
     @Bindable var store: BoardStore
+
+    /// Optional iCloud sync provider for status display
+    var cloudSync: IOSCloudSync? = nil
 
     /// Currently selected card titles
     @State private var selectedCardTitles: Set<String> = []
@@ -616,5 +632,192 @@ struct ColumnEndDropDelegate: DropDelegate {
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
         return DropProposal(operation: .move)
+    }
+}
+
+// MARK: - iCloud Sync Status View
+
+/// Toolbar view showing iCloud sync status.
+///
+/// Displays an icon indicating the current sync state:
+/// - Cloud with checkmark: synced
+/// - Cloud with arrow up: local changes to push
+/// - Cloud with arrow down: remote changes to pull
+/// - Spinning cloud: syncing in progress
+struct IOSSyncStatusView: View {
+    @ObservedObject var cloudSync: IOSCloudSync
+
+    /// Whether to show the sync details popover
+    @State private var showDetails: Bool = false
+
+    var body: some View {
+        Button {
+            if cloudSync.status == .remoteChanges || cloudSync.status == .localChanges {
+                // Trigger sync when there are changes
+                Task {
+                    await cloudSync.sync()
+                }
+            } else {
+                showDetails.toggle()
+            }
+        } label: {
+            Group {
+                if cloudSync.status == .syncing {
+                    // Animated syncing indicator
+                    Image(systemName: cloudSync.statusSymbol)
+                        .symbolEffect(.variableColor.iterative.reversing)
+                } else {
+                    Image(systemName: cloudSync.statusSymbol)
+                }
+            }
+            .foregroundStyle(statusColor)
+        }
+        .popover(isPresented: $showDetails) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: cloudSync.statusSymbol)
+                        .font(.title2)
+                        .foregroundStyle(statusColor)
+                    Text(cloudSync.statusDescription)
+                        .font(.headline)
+                }
+
+                if cloudSync.isCloudEnabled {
+                    Text("This board is stored in iCloud and syncs automatically across your devices.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("This board is stored locally on this device only.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                if cloudSync.status == .remoteChanges {
+                    Button {
+                        Task {
+                            await cloudSync.sync()
+                        }
+                        showDetails = false
+                    } label: {
+                        Label("Download Changes", systemImage: "arrow.down.circle")
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
+            }
+            .padding()
+            .frame(minWidth: 280)
+        }
+    }
+
+    /// Color for the sync status icon.
+    private var statusColor: Color {
+        switch cloudSync.status {
+        case .synced:
+            return .green
+        case .syncing:
+            return .blue
+        case .localChanges, .remoteChanges:
+            return .orange
+        case .diverged, .conflict:
+            return .red
+        case .notConfigured:
+            return .secondary
+        case .error:
+            return .red
+        }
+    }
+}
+
+// MARK: - iCloud Board Creator
+
+/// Sheet for creating a new board directly in iCloud.
+///
+/// Allows users to enter a board name and creates the board
+/// in the iCloud container for automatic sync.
+struct IOSCloudBoardCreator: View {
+    let onComplete: (URL?) -> Void
+
+    @State private var boardName: String = ""
+    @State private var errorMessage: String? = nil
+    @State private var isCreating: Bool = false
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Board Name") {
+                    TextField("My Project Board", text: $boardName)
+                        .textContentType(.name)
+                        .autocorrectionDisabled()
+                }
+
+                Section {
+                    HStack {
+                        Image(systemName: "icloud.fill")
+                            .foregroundStyle(.cyan)
+                        Text("This board will sync across all your iCloud devices automatically.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Create iCloud Board")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                        onComplete(nil)
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Create") {
+                        createBoard()
+                    }
+                    .disabled(boardName.isEmpty || isCreating)
+                }
+            }
+            .interactiveDismissDisabled(isCreating)
+        }
+    }
+
+    /// Creates the board in iCloud.
+    private func createBoard() {
+        isCreating = true
+        errorMessage = nil
+
+        // Sanitize the board name for use as a folder name
+        let sanitizedName: String = boardName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+
+        guard !sanitizedName.isEmpty else {
+            errorMessage = "Please enter a valid board name."
+            isCreating = false
+            return
+        }
+
+        do {
+            let board: Board = Board.createDefault(title: boardName)
+            if let url = try IOSCloudContainer.createBoard(board, named: sanitizedName) {
+                dismiss()
+                onComplete(url)
+            } else {
+                errorMessage = "iCloud is not available. Please sign in to iCloud in Settings."
+                isCreating = false
+            }
+        } catch {
+            errorMessage = "Failed to create board: \(error.localizedDescription)"
+            isCreating = false
+        }
     }
 }
