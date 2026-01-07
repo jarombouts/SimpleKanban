@@ -20,10 +20,12 @@ This document outlines a comprehensive plan to add iOS support (iPad-only, lands
 
 These steps must be done manually in Xcode - they cannot be automated:
 
-### Phase 1: Integrate Shared Package *(Current)*
+### Phase 1: Integrate Shared Package
 
-- [ ] **Add local package**: File → Add Package Dependencies → Add Local → select `Shared/`
-- [ ] **Link to macOS target**: Add `SimpleKanbanCore` to SimpleKanban target
+**Status: PARTIALLY COMPLETE** (iOS uses shared package, macOS still has duplicates)
+
+- [x] **Add local package**: File → Add Package Dependencies → Add Local → select `Shared/`
+- [ ] **Link to macOS target**: Add `SimpleKanbanCore` to SimpleKanban target ⚠️ NOT DONE
 - [ ] **Link to test target**: Add `SimpleKanbanCore` to SimpleKanbanTests target
 - [ ] **Delete duplicates from SimpleKanban/**:
   - [ ] `Models.swift` (now in Shared/)
@@ -39,25 +41,58 @@ These steps must be done manually in Xcode - they cannot be automated:
   - [ ] Change `@testable import SimpleKanban` to `@testable import SimpleKanbanCore` where needed
 - [ ] **Build & run tests** to verify everything works
 
-### Phase 2: Add iOS Target *(Files Created - Needs Xcode Setup)*
+### Phase 2: Add iOS Target ✅ COMPLETE
 
-The iOS source files have been created in `SimpleKanbanIOS/`. Now complete setup in Xcode:
+The iOS target has been created and configured in Xcode (January 2026):
 
-- [ ] **Create iOS target**: File → New → Target → App (iOS)
+- [x] **Create iOS target**: File → New → Target → App (iOS)
   - Product Name: `SimpleKanbanIOS`
   - Interface: SwiftUI
   - Language: Swift
-- [ ] **Configure target settings**:
-  - [ ] Deployment Target: iOS 17.0
-  - [ ] Devices: iPad only (uncheck iPhone)
-  - [ ] Bundle ID: `com.yourname.SimpleKanbanIOS`
-- [ ] **Add existing files to target**:
-  - [ ] Drag `SimpleKanbanIOS/*.swift` into the new target
-  - [ ] Ensure files are added to SimpleKanbanIOS target only
-- [ ] **Link SimpleKanbanCore**: Target → General → Frameworks → Add `SimpleKanbanCore`
-- [ ] **Copy entitlements**: Use `SimpleKanbanIOS/SimpleKanbanIOS.entitlements`
-- [ ] **Copy Info.plist settings** or use the provided `SimpleKanbanIOS/Info.plist`
+- [x] **Configure target settings**:
+  - [x] Deployment Target: iOS 17.0
+  - [x] Devices: iPad only
+  - [x] Bundle ID: `nl.strangeloop.SimpleKanbanIOS`
+- [x] **Add existing files to target**:
+  - [x] Set target membership for all `SimpleKanbanIOS/*.swift` files
+  - [x] Files added to SimpleKanbanIOS target only
+- [x] **Link SimpleKanbanCore**: Target → General → Frameworks → Add `SimpleKanbanCore`
+- [ ] **Configure entitlements**: Use `SimpleKanbanIOS/SimpleKanbanIOS.entitlements` (for iCloud)
 - [ ] **Build & run** on iPad Simulator to verify
+
+---
+
+## ⚠️ Technical Debt: Duplicate Files
+
+**Current State (January 2026):**
+
+The macOS app still has LOCAL copies of shared code, while the iOS app uses the shared package:
+
+| File | macOS `SimpleKanban/` | Shared `SimpleKanbanCore/` | iOS uses |
+|------|:---------------------:|:--------------------------:|:--------:|
+| Models.swift | ✓ (local copy) | ✓ | Shared ✓ |
+| FileSystem.swift | ✓ (local copy) | ✓ | Shared ✓ |
+| BoardStore.swift | ✓ (local copy) | ✓ | Shared ✓ |
+| Protocols.swift | — | ✓ | Shared ✓ |
+
+**Why this matters:**
+- Bug fixes in shared code won't affect macOS until duplicates are removed
+- Two copies to maintain = drift risk
+- Confusing for contributors
+
+**To fix (future task):**
+1. Link `SimpleKanbanCore` to the macOS `SimpleKanban` target
+2. Delete duplicate files from `SimpleKanban/`:
+   - `Models.swift`
+   - `FileSystem.swift`
+   - `BoardStore.swift`
+3. Add `import SimpleKanbanCore` to remaining macOS files:
+   - `Views.swift`
+   - `SimpleKanbanApp.swift`
+   - `FileWatcher.swift`
+   - `GitSync.swift`
+   - `KeyboardNavigation.swift`
+4. Rebuild and test macOS app
 
 ---
 

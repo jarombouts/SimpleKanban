@@ -69,7 +69,13 @@ public final class IOSCloudSync: ObservableObject, SyncProviderProtocol {
     }
 
     deinit {
-        stopMonitoring()
+        // Note: We intentionally don't call stopMonitoring() here because it's
+        // MainActor-isolated. The metadataQuery and syncCheckTimer will be
+        // deallocated along with self, which stops them.
+        //
+        // NotificationCenter observers using target-action pattern should be
+        // removed, but since we're being deallocated, the observer references
+        // will also be invalidated. Modern Foundation handles this gracefully.
     }
 
     // MARK: - SyncProviderProtocol

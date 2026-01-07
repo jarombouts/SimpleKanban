@@ -26,7 +26,10 @@ import Foundation
 ///
 /// Markdown body content here.
 /// ```
-public struct Card: Equatable, Sendable {
+public struct Card: Equatable, Sendable, Identifiable {
+    /// Cards are identified by their title, which must be unique within a board.
+    public var id: String { title }
+
     public var title: String
     public var column: String
     public var position: String

@@ -1133,17 +1133,17 @@ public final class BoardStore: @unchecked Sendable {
         }
     }
 
-    // MARK: - Internal (for FileWatcher)
+    // MARK: - Public (for FileWatcher / External Change Handling)
 
     /// Reloads a card from disk, updating the in-memory state.
-    internal func reloadCard(at index: Int, from url: URL) throws {
+    public func reloadCard(at index: Int, from url: URL) throws {
         let content: String = try String(contentsOf: url, encoding: .utf8)
         let reloadedCard: Card = try Card.parse(from: content)
         cards[index] = reloadedCard
     }
 
     /// Adds a card loaded from disk.
-    internal func addLoadedCard(_ card: Card) {
+    public func addLoadedCard(_ card: Card) {
         cards.append(card)
         sortCards()
     }
@@ -1153,7 +1153,7 @@ public final class BoardStore: @unchecked Sendable {
     /// - Parameter slug: The slugified title of the card to remove
     /// - Returns: true if a card was removed, false otherwise
     @discardableResult
-    internal func removeCard(bySlug slug: String) -> Bool {
+    public func removeCard(bySlug slug: String) -> Bool {
         if let index: Int = cards.firstIndex(where: { slugify($0.title) == slug }) {
             cards.remove(at: index)
             return true
@@ -1162,7 +1162,7 @@ public final class BoardStore: @unchecked Sendable {
     }
 
     /// Removes cards that no longer exist on disk.
-    internal func removeCards(notIn existingSlugs: Set<String>) {
+    public func removeCards(notIn existingSlugs: Set<String>) {
         cards.removeAll { card in
             let slug: String = slugify(card.title)
             return !existingSlugs.contains(slug)
@@ -1170,7 +1170,7 @@ public final class BoardStore: @unchecked Sendable {
     }
 
     /// Reloads the board configuration from disk.
-    internal func reloadBoard() throws {
+    public func reloadBoard() throws {
         let boardURL: URL = url.appendingPathComponent("board.md")
         let content: String = try String(contentsOf: boardURL, encoding: .utf8)
         board = try Board.parse(from: content)

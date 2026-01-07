@@ -324,7 +324,6 @@ struct IOSColumnView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-            }
         }
         .frame(width: columnWidth)
         .background(Color(.systemGroupedBackground))
@@ -403,7 +402,7 @@ struct IOSCardDetailView: View {
     let onDismiss: () -> Void
 
     @State private var title: String = ""
-    @State private var body: String = ""
+    @State private var cardBody: String = ""
     @State private var selectedLabels: Set<String> = []
 
     var body: some View {
@@ -439,7 +438,7 @@ struct IOSCardDetailView: View {
                 }
 
                 Section("Description") {
-                    TextEditor(text: $body)
+                    TextEditor(text: $cardBody)
                         .frame(minHeight: 200)
                 }
             }
@@ -461,7 +460,7 @@ struct IOSCardDetailView: View {
             }
             .onAppear {
                 title = card.title
-                body = card.body
+                cardBody = card.body
                 selectedLabels = Set(card.labels)
             }
         }
@@ -474,8 +473,8 @@ struct IOSCardDetailView: View {
 
         // Refresh card reference after title change
         if let updatedCard = store.card(withTitle: title) {
-            if body != updatedCard.body {
-                try? store.updateCard(updatedCard, body: body)
+            if cardBody != updatedCard.body {
+                try? store.updateCard(updatedCard, body: cardBody)
             }
 
             let newLabels: [String] = Array(selectedLabels)
