@@ -16,6 +16,40 @@ This document outlines a comprehensive plan to add iOS support (iPad-only, lands
 
 ---
 
+## ⚠️ Manual Steps Required (Xcode)
+
+These steps must be done manually in Xcode - they cannot be automated:
+
+### Phase 1: Integrate Shared Package *(Current)*
+
+- [ ] **Add local package**: File → Add Package Dependencies → Add Local → select `Shared/`
+- [ ] **Link to macOS target**: Add `SimpleKanbanCore` to SimpleKanban target
+- [ ] **Link to test target**: Add `SimpleKanbanCore` to SimpleKanbanTests target
+- [ ] **Delete duplicates from SimpleKanban/**:
+  - [ ] `Models.swift` (now in Shared/)
+  - [ ] `FileSystem.swift` (now in Shared/)
+  - [ ] `BoardStore.swift` (now in Shared/)
+- [ ] **Update imports** in remaining macOS files:
+  - [ ] `Views.swift`: Add `import SimpleKanbanCore`
+  - [ ] `SimpleKanbanApp.swift`: Add `import SimpleKanbanCore`
+  - [ ] `FileWatcher.swift`: Add `import SimpleKanbanCore`
+  - [ ] `GitSync.swift`: Add `import SimpleKanbanCore`
+  - [ ] `KeyboardNavigation.swift`: Add `import SimpleKanbanCore`
+- [ ] **Update test imports**:
+  - [ ] Change `@testable import SimpleKanban` to `@testable import SimpleKanbanCore` where needed
+- [ ] **Build & run tests** to verify everything works
+
+### Phase 2: Add iOS Target *(Next)*
+
+- [ ] File → New → Target → App (iOS)
+- [ ] Name: `SimpleKanbanIOS`
+- [ ] Set deployment target: iOS 17.0
+- [ ] Set device: iPad only
+- [ ] Link `SimpleKanbanCore` to iOS target
+- [ ] Configure entitlements for iCloud
+
+---
+
 ## Part 1: Current Architecture Analysis
 
 ### Platform-Agnostic Code (Shareable)
