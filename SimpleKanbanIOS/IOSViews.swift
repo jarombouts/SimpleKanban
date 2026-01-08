@@ -629,7 +629,11 @@ struct IOSColumnView: View {
             }
             .coordinateSpace(name: "iosColumnScroll")
             .onPreferenceChange(IOSCardFramePreferenceKey.self) { frames in
-                cardFrames = frames
+                // Use transaction without animation to prevent "multiple updates per frame" warning
+                // The frames update frequently during drag, but we don't want to animate the state change
+                withTransaction(Transaction(animation: nil)) {
+                    cardFrames = frames
+                }
             }
             // Custom drop delegate for continuous location tracking during drag
             .onDrop(of: [.text], delegate: IOSColumnDropDelegate(
