@@ -634,27 +634,153 @@ struct IOSDeleteToolbarButton: View {
     }
 }
 
-/// Minimal board settings view showing board information.
+/// Full board settings view with editing capabilities.
 ///
-/// Displays board name, column count, label count, and card statistics.
-/// Can be expanded later to support editing columns and labels.
+/// Allows editing:
+/// - Board name
+/// - Columns (add, rename, delete, reorder)
+/// - Labels (add, rename, change color, delete)
 struct IOSBoardSettingsView: View {
     let store: BoardStore
     let onDismiss: () -> Void
 
+    /// Board name for editing
+    @State private var boardName: String = ""
+
+    /// Local copy of columns for editing
+    @State private var columns: [Column] = []
+
+    /// Local copy of labels for editing
+    @State private var labels: [CardLabel] = []
+
+    /// Whether to show add column sheet
+    @State private var showAddColumn: Bool = false
+
+    /// Whether to show add label sheet
+    @State private var showAddLabel: Bool = false
+
+    /// Column pending deletion
+    @State private var columnToDelete: Column? = nil
+
+    /// Cards in column pending deletion
+    @State private var cardsInColumnToDelete: [Card] = []
+
+    /// Target column for moving cards when deleting
+    @State private var moveCardsToColumn: String = ""
+
+    /// Label pending deletion
+    @State private var labelToDelete: CardLabel? = nil
+
+    /// Error message to display
+    @State private var errorMessage: String? = nil
+
     var body: some View {
         NavigationStack {
             Form {
-                Section("Board") {
-                    LabeledContent("Name", value: store.board.title)
-                    LabeledContent("Columns", value: "\(store.board.columns.count)")
-                    LabeledContent("Labels", value: "\(store.board.labels.count)")
+                // MARK: Board Name Section
+                Section {
+                    TextField("Board name", text: $boardName)
+                        .onChange(of: boardName) { _, newValue in
+                            if !newValue.isEmpty && newValue != store.board.title {
+                                try? store.updateBoardTitle(newValue)
+                            }
+                        }
+                } header: {
+                    Text("Board Name")
+                } footer: {
+                    Text("The board name is stored in board.md")
                 }
 
+                // MARK: Columns Section
+                Section {
+                    ForEach(columns, id: \.id) { column in
+                        IOSColumnSettingsRow(
+                            column: column,
+                            cardCount: store.cards(forColumn: column.id).count,
+                            onRename: { newName in
+                                try? store.updateColumnName(column.id, name: newName)
+                                if let index = columns.firstIndex(where: { $0.id == column.id }) {
+                                    columns[index].name = newName
+                                }
+                            }
+                        )
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                prepareColumnDeletion(column)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                    }
+                    .onMove { from, to in
+                        columns.move(fromOffsets: from, toOffset: to)
+                        try? store.reorderColumns(columns.map { $0.id })
+                    }
+
+                    Button {
+                        showAddColumn = true
+                    } label: {
+                        Label("Add Column", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Columns")
+                } footer: {
+                    Text("Drag to reorder. Cards are stored in column subdirectories.")
+                }
+
+                // MARK: Labels Section
+                Section {
+                    if labels.isEmpty {
+                        Text("No labels defined")
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(labels, id: \.id) { label in
+                            IOSLabelSettingsRow(
+                                label: label,
+                                onRename: { newName in
+                                    try? store.updateLabel(label.id, name: newName)
+                                    if let index = labels.firstIndex(where: { $0.id == label.id }) {
+                                        labels[index].name = newName
+                                    }
+                                },
+                                onColorChange: { newColor in
+                                    let hexColor: String = newColor.toHex()
+                                    try? store.updateLabel(label.id, color: hexColor)
+                                    if let index = labels.firstIndex(where: { $0.id == label.id }) {
+                                        labels[index].color = hexColor
+                                    }
+                                }
+                            )
+                            .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                Button(role: .destructive) {
+                                    labelToDelete = label
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                        }
+                        .onMove { from, to in
+                            labels.move(fromOffsets: from, toOffset: to)
+                            try? store.reorderLabels(labels.map { $0.id })
+                        }
+                    }
+
+                    Button {
+                        showAddLabel = true
+                    } label: {
+                        Label("Add Label", systemImage: "plus")
+                    }
+                } header: {
+                    Text("Labels")
+                } footer: {
+                    Text("Labels help categorize cards. Tap to edit name or color.")
+                }
+
+                // MARK: Statistics Section
                 Section("Statistics") {
                     LabeledContent("Total Cards", value: "\(store.cards.count)")
 
-                    // Show card count per column
                     ForEach(store.board.columns, id: \.id) { column in
                         let count: Int = store.cards(forColumn: column.id).count
                         LabeledContent(column.name, value: "\(count)")
@@ -669,8 +795,442 @@ struct IOSBoardSettingsView: View {
                         onDismiss()
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    EditButton()
+                }
+            }
+            .onAppear {
+                boardName = store.board.title
+                columns = store.board.columns
+                labels = store.board.labels
+            }
+            // Add column sheet
+            .sheet(isPresented: $showAddColumn) {
+                IOSAddColumnSheet(
+                    existingColumnIDs: Set(columns.map { $0.id }),
+                    onAdd: { name in
+                        let id: String = slugify(name)
+                        try? store.addColumn(id: id, name: name)
+                        columns.append(Column(id: id, name: name))
+                        showAddColumn = false
+                    },
+                    onCancel: { showAddColumn = false }
+                )
+            }
+            // Add label sheet
+            .sheet(isPresented: $showAddLabel) {
+                IOSAddLabelSheet(
+                    existingLabelIDs: Set(labels.map { $0.id }),
+                    onAdd: { name, color in
+                        let id: String = slugify(name)
+                        let hexColor: String = color.toHex()
+                        try? store.addLabel(id: id, name: name, color: hexColor)
+                        labels.append(CardLabel(id: id, name: name, color: hexColor))
+                        showAddLabel = false
+                    },
+                    onCancel: { showAddLabel = false }
+                )
+            }
+            // Column deletion confirmation
+            .confirmationDialog(
+                "Delete Column",
+                isPresented: Binding(
+                    get: { columnToDelete != nil },
+                    set: { if !$0 { columnToDelete = nil; cardsInColumnToDelete = [] } }
+                ),
+                titleVisibility: .visible
+            ) {
+                if columns.count > 1 && !cardsInColumnToDelete.isEmpty {
+                    ForEach(columns.filter { $0.id != columnToDelete?.id }, id: \.id) { col in
+                        Button("Move \(cardsInColumnToDelete.count) card(s) to \(col.name)") {
+                            moveCardsAndDeleteColumn(to: col.id)
+                        }
+                    }
+                }
+                if cardsInColumnToDelete.isEmpty {
+                    Button("Delete", role: .destructive) {
+                        deleteColumnDirectly()
+                    }
+                }
+                Button("Cancel", role: .cancel) {
+                    columnToDelete = nil
+                    cardsInColumnToDelete = []
+                }
+            } message: {
+                if let column = columnToDelete {
+                    if cardsInColumnToDelete.isEmpty {
+                        Text("Delete column \"\(column.name)\"?")
+                    } else if columns.count > 1 {
+                        Text("Column \"\(column.name)\" has \(cardsInColumnToDelete.count) card(s). Choose where to move them.")
+                    } else {
+                        Text("Cannot delete the only column. Create another column first.")
+                    }
+                }
+            }
+            // Label deletion confirmation
+            .confirmationDialog(
+                "Delete Label",
+                isPresented: Binding(
+                    get: { labelToDelete != nil },
+                    set: { if !$0 { labelToDelete = nil } }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    if let label = labelToDelete {
+                        try? store.removeLabel(label.id)
+                        labels.removeAll { $0.id == label.id }
+                    }
+                    labelToDelete = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    labelToDelete = nil
+                }
+            } message: {
+                if let label = labelToDelete {
+                    Text("Delete label \"\(label.name)\"? Cards using this label will keep the label ID but it won't display.")
+                }
             }
         }
+    }
+
+    /// Prepares column deletion, checking if cards exist
+    private func prepareColumnDeletion(_ column: Column) {
+        let cardsInColumn: [Card] = store.cards(forColumn: column.id)
+        if cardsInColumn.isEmpty {
+            columnToDelete = column
+            cardsInColumnToDelete = []
+        } else {
+            columnToDelete = column
+            cardsInColumnToDelete = cardsInColumn
+            moveCardsToColumn = columns.first { $0.id != column.id }?.id ?? ""
+        }
+    }
+
+    /// Moves cards to target column and deletes the source column
+    private func moveCardsAndDeleteColumn(to targetColumnID: String) {
+        guard let column = columnToDelete else { return }
+        for card in cardsInColumnToDelete {
+            try? store.moveCard(card, toColumn: targetColumnID, atIndex: nil)
+        }
+        try? store.removeColumn(column.id)
+        columns.removeAll { $0.id == column.id }
+        columnToDelete = nil
+        cardsInColumnToDelete = []
+    }
+
+    /// Deletes an empty column directly
+    private func deleteColumnDirectly() {
+        guard let column = columnToDelete else { return }
+        try? store.removeColumn(column.id)
+        columns.removeAll { $0.id == column.id }
+        columnToDelete = nil
+    }
+}
+
+// MARK: - Column Settings Row
+
+/// A row for editing a column in settings.
+struct IOSColumnSettingsRow: View {
+    let column: Column
+    let cardCount: Int
+    let onRename: (String) -> Void
+
+    @State private var isEditing: Bool = false
+    @State private var editedName: String = ""
+
+    var body: some View {
+        HStack {
+            if isEditing {
+                TextField("Column name", text: $editedName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        commitEdit()
+                    }
+
+                Button("Done") {
+                    commitEdit()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            } else {
+                Text(column.name)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text("\(cardCount)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.secondary.opacity(0.2))
+                    .clipShape(Capsule())
+
+                Button {
+                    editedName = column.name
+                    isEditing = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func commitEdit() {
+        if !editedName.isEmpty && editedName != column.name {
+            onRename(editedName)
+        }
+        isEditing = false
+    }
+}
+
+// MARK: - Label Settings Row
+
+/// A row for editing a label in settings.
+struct IOSLabelSettingsRow: View {
+    let label: CardLabel
+    let onRename: (String) -> Void
+    let onColorChange: (Color) -> Void
+
+    @State private var isEditing: Bool = false
+    @State private var editedName: String = ""
+    @State private var selectedColor: Color = .blue
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Color picker
+            ColorPicker("", selection: $selectedColor, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 30)
+                .onChange(of: selectedColor) { _, newColor in
+                    onColorChange(newColor)
+                }
+
+            if isEditing {
+                TextField("Label name", text: $editedName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        commitEdit()
+                    }
+
+                Button("Done") {
+                    commitEdit()
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            } else {
+                // Label preview chip
+                Text(label.name)
+                    .font(.system(size: 12, weight: .medium))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background((Color(hex: label.color) ?? .gray).opacity(0.2))
+                    .foregroundStyle(Color(hex: label.color) ?? .gray)
+                    .clipShape(Capsule())
+
+                Spacer()
+
+                Button {
+                    editedName = label.name
+                    selectedColor = Color(hex: label.color) ?? .blue
+                    isEditing = true
+                } label: {
+                    Image(systemName: "pencil")
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .onAppear {
+            selectedColor = Color(hex: label.color) ?? .blue
+        }
+    }
+
+    private func commitEdit() {
+        if !editedName.isEmpty && editedName != label.name {
+            onRename(editedName)
+        }
+        isEditing = false
+    }
+}
+
+// MARK: - Add Column Sheet
+
+/// Sheet for adding a new column.
+struct IOSAddColumnSheet: View {
+    let existingColumnIDs: Set<String>
+    let onAdd: (String) -> Void
+    let onCancel: () -> Void
+
+    @State private var columnName: String = ""
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Column name", text: $columnName)
+                } footer: {
+                    if let error = errorMessage {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    } else {
+                        Text("The column ID will be: \(slugify(columnName).isEmpty ? "..." : slugify(columnName))")
+                    }
+                }
+            }
+            .navigationTitle("Add Column")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        addColumn()
+                    }
+                    .disabled(columnName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func addColumn() {
+        let trimmedName: String = columnName.trimmingCharacters(in: .whitespaces)
+        let id: String = slugify(trimmedName)
+
+        if id.isEmpty {
+            errorMessage = "Please enter a valid column name"
+            return
+        }
+
+        if existingColumnIDs.contains(id) {
+            errorMessage = "A column with this ID already exists"
+            return
+        }
+
+        onAdd(trimmedName)
+    }
+}
+
+// MARK: - Add Label Sheet
+
+/// Sheet for adding a new label.
+struct IOSAddLabelSheet: View {
+    let existingLabelIDs: Set<String>
+    let onAdd: (String, Color) -> Void
+    let onCancel: () -> Void
+
+    @State private var labelName: String = ""
+    @State private var labelColor: Color = .blue
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("Label name", text: $labelName)
+                } header: {
+                    Text("Name")
+                }
+
+                Section {
+                    ColorPicker("Color", selection: $labelColor, supportsOpacity: false)
+
+                    // Preview
+                    HStack {
+                        Text("Preview:")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text(labelName.isEmpty ? "Label" : labelName)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(labelColor.opacity(0.2))
+                            .foregroundStyle(labelColor)
+                            .clipShape(Capsule())
+                    }
+                } header: {
+                    Text("Appearance")
+                }
+
+                if let error = errorMessage {
+                    Section {
+                        Text(error)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Add Label")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") {
+                        addLabel()
+                    }
+                    .disabled(labelName.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func addLabel() {
+        let trimmedName: String = labelName.trimmingCharacters(in: .whitespaces)
+        let id: String = slugify(trimmedName)
+
+        if id.isEmpty {
+            errorMessage = "Please enter a valid label name"
+            return
+        }
+
+        if existingLabelIDs.contains(id) {
+            errorMessage = "A label with this ID already exists"
+            return
+        }
+
+        onAdd(trimmedName, labelColor)
+    }
+}
+
+// MARK: - Slugify Helper
+
+/// Converts a string to a URL-safe slug for use as IDs.
+///
+/// Example: "In Progress" → "in-progress"
+private func slugify(_ string: String) -> String {
+    return string
+        .lowercased()
+        .trimmingCharacters(in: .whitespaces)
+        .replacingOccurrences(of: " ", with: "-")
+        .replacingOccurrences(of: "[^a-z0-9-]", with: "", options: .regularExpression)
+}
+
+// MARK: - Color to Hex Extension
+
+extension Color {
+    /// Converts a Color to a hex string (e.g., "#3498db")
+    func toHex() -> String {
+        // Get UIColor representation
+        let uiColor: UIColor = UIColor(self)
+
+        var red: CGFloat = 0
+        var green: CGFloat = 0
+        var blue: CGFloat = 0
+        var alpha: CGFloat = 0
+
+        uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+
+        let r: Int = Int(red * 255)
+        let g: Int = Int(green * 255)
+        let b: Int = Int(blue * 255)
+
+        return String(format: "#%02x%02x%02x", r, g, b)
     }
 }
 
