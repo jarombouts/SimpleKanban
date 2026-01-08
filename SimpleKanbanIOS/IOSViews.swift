@@ -123,14 +123,22 @@ struct IOSWelcomeView: View {
 /// - Horizontal scroll for columns
 /// - Touch-friendly card sizes
 /// - Drag and drop support
+/// - Multi-select mode for bulk operations
+/// - Undo/redo support via system UndoManager
 struct IOSBoardView: View {
     @Bindable var store: BoardStore
 
     /// Optional iCloud sync provider for status display
     var cloudSync: IOSCloudSync? = nil
 
-    /// Currently selected card titles
+    /// Environment undo manager for Edit menu integration and shake-to-undo
+    @Environment(\.undoManager) private var undoManager
+
+    /// Currently selected card titles (for multi-select)
     @State private var selectedCardTitles: Set<String> = []
+
+    /// Whether selection mode is active (changes tap behavior)
+    @State private var isSelectionMode: Bool = false
 
     /// Card being edited in sheet
     @State private var editingCard: Card? = nil
@@ -153,83 +161,145 @@ struct IOSBoardView: View {
     /// Card title pending deletion (from drop on trash)
     @State private var cardToDelete: String? = nil
 
+    /// Whether to show bulk delete confirmation
+    @State private var showBulkDeleteConfirmation: Bool = false
+
+    /// Whether to show bulk move action sheet
+    @State private var showBulkMoveSheet: Bool = false
+
+    /// Whether to show bulk label action sheet
+    @State private var showBulkLabelSheet: Bool = false
+
     var body: some View {
         NavigationStack {
-            GeometryReader { geometry in
-                // Calculate dynamic column width:
-                // - Show at most 3 columns side-by-side
-                // - If fewer columns exist, expand to fill available space
-                // - Minimum width: 280pt for touch-friendly interaction
-                let columnCount: Int = store.board.columns.count
-                let padding: CGFloat = 16
-                let spacing: CGFloat = 16
-                let visibleColumns: Int = min(columnCount, 3)
-                let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(visibleColumns - 1)
-                let columnWidth: CGFloat = max(280, (geometry.size.width - totalSpacing) / CGFloat(visibleColumns))
+            ZStack(alignment: .bottom) {
+                // Main board content
+                GeometryReader { geometry in
+                    // Calculate dynamic column width:
+                    // - Show at most 3 columns side-by-side
+                    // - If fewer columns exist, expand to fill available space
+                    // - Minimum width: 280pt for touch-friendly interaction
+                    let columnCount: Int = store.board.columns.count
+                    let padding: CGFloat = 16
+                    let spacing: CGFloat = 16
+                    let visibleColumns: Int = min(columnCount, 3)
+                    let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(visibleColumns - 1)
+                    let columnWidth: CGFloat = max(280, (geometry.size.width - totalSpacing) / CGFloat(visibleColumns))
 
-                ScrollView(.horizontal, showsIndicators: true) {
-                    HStack(alignment: .top, spacing: spacing) {
-                        ForEach(store.board.columns, id: \.id) { column in
-                            IOSColumnView(
-                                column: column,
-                                cards: store.filteredCards(forColumn: column.id),
-                                columnWidth: columnWidth,
-                                selectedTitles: $selectedCardTitles,
-                                onCardTap: { card in
-                                    editingCard = card
-                                },
-                                onAddCard: {
-                                    addingCardToColumn = column.id
-                                },
-                                store: store
-                            )
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(alignment: .top, spacing: spacing) {
+                            ForEach(store.board.columns, id: \.id) { column in
+                                IOSColumnView(
+                                    column: column,
+                                    cards: store.filteredCards(forColumn: column.id),
+                                    columnWidth: columnWidth,
+                                    selectedTitles: $selectedCardTitles,
+                                    isSelectionMode: isSelectionMode,
+                                    onCardTap: { card in
+                                        if isSelectionMode {
+                                            // Toggle selection
+                                            if selectedCardTitles.contains(card.title) {
+                                                selectedCardTitles.remove(card.title)
+                                            } else {
+                                                selectedCardTitles.insert(card.title)
+                                            }
+                                        } else {
+                                            editingCard = card
+                                        }
+                                    },
+                                    onAddCard: {
+                                        addingCardToColumn = column.id
+                                    },
+                                    store: store
+                                )
+                            }
                         }
+                        .padding(padding)
+                        // Add bottom padding when bulk action bar is visible
+                        .padding(.bottom, isSelectionMode && !selectedCardTitles.isEmpty ? 80 : 0)
                     }
-                    .padding(padding)
+                }
+
+                // Bulk action bar (shown when cards are selected)
+                if isSelectionMode && !selectedCardTitles.isEmpty {
+                    IOSBulkActionBar(
+                        selectedCount: selectedCardTitles.count,
+                        onMove: { showBulkMoveSheet = true },
+                        onLabel: { showBulkLabelSheet = true },
+                        onArchive: { archiveSelectedCards() },
+                        onDelete: { showBulkDeleteConfirmation = true }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
-            .navigationTitle(store.board.title)
+            .animation(.easeInOut(duration: 0.2), value: isSelectionMode)
+            .animation(.easeInOut(duration: 0.2), value: selectedCardTitles.isEmpty)
+            .navigationTitle(isSelectionMode ? "\(selectedCardTitles.count) Selected" : store.board.title)
             .navigationBarTitleDisplayMode(.inline)
             .searchable(text: $searchText, prompt: "Search cards")
             .onChange(of: searchText) { _, newValue in
                 store.searchText = newValue
             }
             .toolbar {
-                ToolbarItemGroup(placement: .primaryAction) {
-                    // Label filter button with badge showing count
-                    Button {
-                        showLabelFilter.toggle()
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "tag")
-                            if !store.filterLabels.isEmpty {
-                                Text("\(store.filterLabels.count)")
-                                    .font(.caption2)
-                            }
+                // Leading toolbar - selection mode toggle or cancel
+                ToolbarItem(placement: .topBarLeading) {
+                    if isSelectionMode {
+                        Button("Done") {
+                            exitSelectionMode()
+                        }
+                    } else {
+                        Button {
+                            isSelectionMode = true
+                        } label: {
+                            Image(systemName: "checklist")
                         }
                     }
-                    .popover(isPresented: $showLabelFilter) {
-                        IOSLabelFilterPopover(
-                            labels: store.board.labels,
-                            selectedLabels: $store.filterLabels
+                }
+
+                ToolbarItemGroup(placement: .primaryAction) {
+                    if isSelectionMode {
+                        // Select all button
+                        Button {
+                            selectAllCards()
+                        } label: {
+                            Text("Select All")
+                        }
+                    } else {
+                        // Label filter button with badge showing count
+                        Button {
+                            showLabelFilter.toggle()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "tag")
+                                if !store.filterLabels.isEmpty {
+                                    Text("\(store.filterLabels.count)")
+                                        .font(.caption2)
+                                }
+                            }
+                        }
+                        .popover(isPresented: $showLabelFilter) {
+                            IOSLabelFilterPopover(
+                                labels: store.board.labels,
+                                selectedLabels: $store.filterLabels
+                            )
+                        }
+
+                        // Archive button (drop target)
+                        IOSArchiveToolbarButton(store: store)
+
+                        // Delete button (drop target)
+                        IOSDeleteToolbarButton(
+                            store: store,
+                            showConfirmation: $showDeleteConfirmation,
+                            cardToDelete: $cardToDelete
                         )
-                    }
 
-                    // Archive button (drop target)
-                    IOSArchiveToolbarButton(store: store)
-
-                    // Delete button (drop target)
-                    IOSDeleteToolbarButton(
-                        store: store,
-                        showConfirmation: $showDeleteConfirmation,
-                        cardToDelete: $cardToDelete
-                    )
-
-                    // Settings gear
-                    Button {
-                        showBoardSettings = true
-                    } label: {
-                        Image(systemName: "gearshape")
+                        // Settings gear
+                        Button {
+                            showBoardSettings = true
+                        } label: {
+                            Image(systemName: "gearshape")
+                        }
                     }
                 }
             }
@@ -248,6 +318,30 @@ struct IOSBoardView: View {
                     showBoardSettings = false
                 }
             }
+            .sheet(isPresented: $showBulkMoveSheet) {
+                IOSBulkMoveSheet(
+                    selectedCount: selectedCardTitles.count,
+                    columns: store.board.columns,
+                    onMove: { columnID in
+                        moveSelectedCards(to: columnID)
+                        showBulkMoveSheet = false
+                    },
+                    onCancel: { showBulkMoveSheet = false }
+                )
+            }
+            .sheet(isPresented: $showBulkLabelSheet) {
+                IOSBulkLabelSheet(
+                    selectedCount: selectedCardTitles.count,
+                    labels: store.board.labels,
+                    onAddLabel: { labelID in
+                        addLabelToSelectedCards(labelID)
+                    },
+                    onRemoveLabel: { labelID in
+                        removeLabelFromSelectedCards(labelID)
+                    },
+                    onDone: { showBulkLabelSheet = false }
+                )
+            }
             .alert("Delete Card?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {
                     cardToDelete = nil
@@ -263,6 +357,98 @@ struct IOSBoardView: View {
                     Text("Are you sure you want to delete \"\(title)\"?")
                 }
             }
+            .confirmationDialog(
+                "Delete \(selectedCardTitles.count) Card\(selectedCardTitles.count == 1 ? "" : "s")?",
+                isPresented: $showBulkDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    deleteSelectedCards()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("This action cannot be undone.")
+            }
+            // Connect undo manager to store for board-level undo/redo
+            .onAppear {
+                store.undoManager = undoManager
+            }
+            .onChange(of: undoManager) { _, newValue in
+                store.undoManager = newValue
+            }
+        }
+    }
+
+    // MARK: - Selection Helpers
+
+    /// Exits selection mode and clears selection
+    private func exitSelectionMode() {
+        isSelectionMode = false
+        selectedCardTitles.removeAll()
+    }
+
+    /// Selects all visible cards
+    private func selectAllCards() {
+        for column in store.board.columns {
+            let cards: [Card] = store.filteredCards(forColumn: column.id)
+            for card in cards {
+                selectedCardTitles.insert(card.title)
+            }
+        }
+    }
+
+    /// Moves selected cards to a column
+    private func moveSelectedCards(to columnID: String) {
+        for title in selectedCardTitles {
+            if let card = store.card(withTitle: title) {
+                try? store.moveCard(card, toColumn: columnID)
+            }
+        }
+        exitSelectionMode()
+    }
+
+    /// Archives all selected cards
+    private func archiveSelectedCards() {
+        for title in selectedCardTitles {
+            if let card = store.card(withTitle: title) {
+                try? store.archiveCard(card)
+            }
+        }
+        exitSelectionMode()
+    }
+
+    /// Deletes all selected cards
+    private func deleteSelectedCards() {
+        for title in selectedCardTitles {
+            if let card = store.card(withTitle: title) {
+                try? store.deleteCard(card)
+            }
+        }
+        exitSelectionMode()
+    }
+
+    /// Adds a label to all selected cards
+    private func addLabelToSelectedCards(_ labelID: String) {
+        for title in selectedCardTitles {
+            if let card = store.card(withTitle: title) {
+                if !card.labels.contains(labelID) {
+                    var newLabels: [String] = card.labels
+                    newLabels.append(labelID)
+                    try? store.updateCard(card, labels: newLabels)
+                }
+            }
+        }
+    }
+
+    /// Removes a label from all selected cards
+    private func removeLabelFromSelectedCards(_ labelID: String) {
+        for title in selectedCardTitles {
+            if let card = store.card(withTitle: title) {
+                if card.labels.contains(labelID) {
+                    let newLabels: [String] = card.labels.filter { $0 != labelID }
+                    try? store.updateCard(card, labels: newLabels)
+                }
+            }
         }
     }
 }
@@ -273,11 +459,16 @@ struct IOSBoardView: View {
 ///
 /// Supports drag & drop for reordering cards and moving between columns.
 /// Shows visual insertion gap during drag operations.
+/// In selection mode, shows checkmarks and disables drag.
 struct IOSColumnView: View {
     let column: Column
     let cards: [Card]
     let columnWidth: CGFloat
     @Binding var selectedTitles: Set<String>
+
+    /// Whether selection mode is active (shows checkmarks, disables drag)
+    let isSelectionMode: Bool
+
     let onCardTap: (Card) -> Void
     let onAddCard: () -> Void
     let store: BoardStore
@@ -314,11 +505,13 @@ struct IOSColumnView: View {
                     .padding(.vertical, 4)
                     .background(.quaternary, in: Capsule())
 
-                Button(action: onAddCard) {
-                    Image(systemName: "plus")
+                if !isSelectionMode {
+                    Button(action: onAddCard) {
+                        Image(systemName: "plus")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
             .padding()
             .background(.regularMaterial)
@@ -354,55 +547,62 @@ struct IOSColumnView: View {
                                 card: card,
                                 isSelected: selectedTitles.contains(card.title),
                                 labels: store.board.labels,
-                                isDragging: false
+                                isDragging: false,
+                                isSelectionMode: isSelectionMode
                             )
                             .onTapGesture {
                                 onCardTap(card)
                             }
-                            .onDrag {
-                                draggingCard = card.title
-                                return NSItemProvider(object: card.title as NSString)
+                            // Only enable drag when not in selection mode
+                            .if(!isSelectionMode) { view in
+                                view.onDrag {
+                                    draggingCard = card.title
+                                    return NSItemProvider(object: card.title as NSString)
+                                }
                             }
-                            .contextMenu {
-                                Button {
-                                    onCardTap(card)
-                                } label: {
-                                    Label("Edit", systemImage: "pencil")
-                                }
+                            // Only show context menu when not in selection mode
+                            .if(!isSelectionMode) { view in
+                                view.contextMenu {
+                                    Button {
+                                        onCardTap(card)
+                                    } label: {
+                                        Label("Edit", systemImage: "pencil")
+                                    }
 
-                                Button {
-                                    try? store.duplicateCard(card)
-                                } label: {
-                                    Label("Duplicate", systemImage: "doc.on.doc")
-                                }
+                                    Button {
+                                        try? store.duplicateCard(card)
+                                    } label: {
+                                        Label("Duplicate", systemImage: "doc.on.doc")
+                                    }
 
-                                // Move to column submenu
-                                Menu {
-                                    ForEach(store.board.columns, id: \.id) { col in
-                                        if col.id != column.id {
-                                            Button {
-                                                try? store.moveCard(card, toColumn: col.id)
-                                            } label: {
-                                                Text(col.name)
+                                    // Move to column submenu
+                                    Menu {
+                                        ForEach(store.board.columns, id: \.id) { col in
+                                            if col.id != column.id {
+                                                Button {
+                                                    try? store.moveCard(card, toColumn: col.id)
+                                                } label: {
+                                                    Text(col.name)
+                                                }
                                             }
                                         }
+                                    } label: {
+                                        Label("Move to...", systemImage: "arrow.right.square")
                                     }
-                                } label: {
-                                    Label("Move to...", systemImage: "arrow.right.square")
-                                }
 
-                                Divider()
+                                    Divider()
 
-                                Button {
-                                    try? store.archiveCard(card)
-                                } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
+                                    Button {
+                                        try? store.archiveCard(card)
+                                    } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
 
-                                Button(role: .destructive) {
-                                    try? store.deleteCard(card)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
+                                    Button(role: .destructive) {
+                                        try? store.deleteCard(card)
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
                                 }
                             }
                             .background(
@@ -459,47 +659,60 @@ struct IOSColumnView: View {
 ///
 /// Displays in order matching macOS: title, body snippet, then labels.
 /// Body preview skips markdown headers (lines starting with #).
+/// In selection mode, shows a checkmark circle on the left.
 struct IOSCardView: View {
     let card: Card
     let isSelected: Bool
     let labels: [CardLabel]
     var isDragging: Bool = false
 
+    /// Whether selection mode is active (shows checkmark)
+    var isSelectionMode: Bool = false
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 1. Title
-            Text(card.title)
-                .font(.subheadline)
-                .fontWeight(.medium)
-                .lineLimit(2)
-
-            // 2. Body snippet (first non-header line, matching macOS)
-            if !card.body.isEmpty {
-                // Skip empty lines and markdown headers (lines starting with #)
-                let firstLine: String = card.body
-                    .components(separatedBy: .newlines)
-                    .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }) ?? ""
-
-                if !firstLine.isEmpty {
-                    Text(firstLine)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
+        HStack(spacing: 12) {
+            // Selection checkmark (shown in selection mode)
+            if isSelectionMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.title2)
+                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             }
 
-            // 3. Labels at bottom (matching macOS order)
-            if !card.labels.isEmpty {
-                HStack(spacing: 4) {
-                    ForEach(card.labels, id: \.self) { labelID in
-                        if let label = labels.first(where: { $0.id == labelID }) {
-                            Text(label.name)
-                                .font(.system(size: 10, weight: .medium))
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background((Color(hex: label.color) ?? .gray).opacity(0.2))
-                                .foregroundStyle(Color(hex: label.color) ?? .gray)
-                                .clipShape(Capsule())
+            VStack(alignment: .leading, spacing: 6) {
+                // 1. Title
+                Text(card.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .lineLimit(2)
+
+                // 2. Body snippet (first non-header line, matching macOS)
+                if !card.body.isEmpty {
+                    // Skip empty lines and markdown headers (lines starting with #)
+                    let firstLine: String = card.body
+                        .components(separatedBy: .newlines)
+                        .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }) ?? ""
+
+                    if !firstLine.isEmpty {
+                        Text(firstLine)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+
+                // 3. Labels at bottom (matching macOS order)
+                if !card.labels.isEmpty {
+                    HStack(spacing: 4) {
+                        ForEach(card.labels, id: \.self) { labelID in
+                            if let label = labels.first(where: { $0.id == labelID }) {
+                                Text(label.name)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background((Color(hex: label.color) ?? .gray).opacity(0.2))
+                                    .foregroundStyle(Color(hex: label.color) ?? .gray)
+                                    .clipShape(Capsule())
+                            }
                         }
                     }
                 }
@@ -1237,6 +1450,11 @@ extension Color {
 // MARK: - Card Detail View
 
 /// Full card editor presented as a sheet.
+///
+/// Features:
+/// - Markdown syntax highlighting in the body editor
+/// - Undo/redo support via keyboard toolbar and gestures
+/// - Label selection
 struct IOSCardDetailView: View {
     let card: Card
     let store: BoardStore
@@ -1246,6 +1464,9 @@ struct IOSCardDetailView: View {
     @State private var cardBody: String = ""
     @State private var selectedLabels: Set<String> = []
 
+    /// Environment undo manager for integration with system undo
+    @Environment(\.undoManager) private var undoManager
+
     var body: some View {
         NavigationStack {
             Form {
@@ -1254,33 +1475,47 @@ struct IOSCardDetailView: View {
                 }
 
                 Section("Labels") {
-                    ForEach(store.board.labels, id: \.id) { label in
-                        Button {
-                            if selectedLabels.contains(label.id) {
-                                selectedLabels.remove(label.id)
-                            } else {
-                                selectedLabels.insert(label.id)
-                            }
-                        } label: {
-                            HStack {
-                                Circle()
-                                    .fill(Color(hex: label.color) ?? .gray)
-                                    .frame(width: 12, height: 12)
-                                Text(label.name)
-                                Spacer()
+                    if store.board.labels.isEmpty {
+                        Text("No labels defined")
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(store.board.labels, id: \.id) { label in
+                            Button {
                                 if selectedLabels.contains(label.id) {
-                                    Image(systemName: "checkmark")
-                                        .foregroundStyle(.tint)
+                                    selectedLabels.remove(label.id)
+                                } else {
+                                    selectedLabels.insert(label.id)
+                                }
+                            } label: {
+                                HStack {
+                                    Circle()
+                                        .fill(Color(hex: label.color) ?? .gray)
+                                        .frame(width: 12, height: 12)
+                                    Text(label.name)
+                                    Spacer()
+                                    if selectedLabels.contains(label.id) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundStyle(.tint)
+                                    }
                                 }
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
 
-                Section("Description") {
-                    TextEditor(text: $cardBody)
-                        .frame(minHeight: 200)
+                Section {
+                    IOSMarkdownTextEditor(text: $cardBody)
+                        .frame(minHeight: 300)
+                } header: {
+                    HStack {
+                        Text("Description")
+                        Spacer()
+                        Text("Markdown supported")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
             .navigationTitle("Edit Card")
@@ -1321,6 +1556,525 @@ struct IOSCardDetailView: View {
             let newLabels: [String] = Array(selectedLabels)
             if newLabels != updatedCard.labels {
                 try? store.updateCard(updatedCard, labels: newLabels)
+            }
+        }
+    }
+}
+
+// MARK: - iOS Markdown Text Editor
+
+/// A text editor with markdown syntax highlighting for iOS/iPadOS.
+///
+/// Wraps UITextView to provide attributed text editing with real-time
+/// syntax highlighting for common markdown elements:
+/// - Headers (# to ######)
+/// - Bold (**text** or __text__)
+/// - Italic (*text* or _text_)
+/// - Code (inline `code` and fenced ```code blocks```)
+/// - Lists (- or * or numbered)
+/// - Blockquotes (> text)
+/// - Links ([text](url))
+///
+/// The text is stored as plain markdown - only the visual display is styled.
+/// This maintains compatibility with the file format.
+///
+/// Includes a keyboard toolbar with:
+/// - Undo/redo buttons
+/// - Common formatting buttons (header, bold, italic, code, link)
+struct IOSMarkdownTextEditor: UIViewRepresentable {
+    @Binding var text: String
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView: UITextView = UITextView()
+
+        // Configure text view for markdown editing
+        textView.font = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+        textView.textColor = UIColor.label
+        textView.backgroundColor = UIColor.secondarySystemBackground
+        textView.autocapitalizationType = .sentences
+        textView.autocorrectionType = .default
+        textView.smartQuotesType = .no
+        textView.smartDashesType = .no
+        textView.smartInsertDeleteType = .no
+
+        // Enable scrolling
+        textView.isScrollEnabled = true
+        textView.alwaysBounceVertical = true
+
+        // Configure text container
+        textView.textContainerInset = UIEdgeInsets(top: 12, left: 8, bottom: 12, right: 8)
+
+        // Set delegate
+        textView.delegate = context.coordinator
+
+        // Add keyboard toolbar with formatting buttons
+        textView.inputAccessoryView = context.coordinator.createKeyboardToolbar(for: textView)
+
+        // Set initial text and apply highlighting
+        textView.text = text
+        context.coordinator.applyHighlighting(to: textView)
+
+        // Style corners
+        textView.layer.cornerRadius = 8
+        textView.clipsToBounds = true
+
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        // Only update if text actually changed externally (avoid cursor jumping)
+        if textView.text != text && !context.coordinator.isUpdating {
+            // Save selection
+            let selectedRange: NSRange = textView.selectedRange
+
+            // Update text
+            textView.text = text
+
+            // Apply highlighting
+            context.coordinator.applyHighlighting(to: textView)
+
+            // Restore selection if valid
+            let maxLocation: Int = textView.text.count
+            if selectedRange.location <= maxLocation {
+                let newLength: Int = min(selectedRange.length, maxLocation - selectedRange.location)
+                textView.selectedRange = NSRange(location: selectedRange.location, length: newLength)
+            }
+        }
+    }
+
+    /// Coordinator handles UITextViewDelegate callbacks to sync text changes
+    /// back to the SwiftUI binding and applies syntax highlighting.
+    @MainActor
+    class Coordinator: NSObject, UITextViewDelegate {
+        var parent: IOSMarkdownTextEditor
+
+        /// Flag to prevent recursive updates when we're applying highlighting
+        var isUpdating: Bool = false
+
+        /// Reference to the text view for toolbar actions
+        weak var textView: UITextView?
+
+        init(_ parent: IOSMarkdownTextEditor) {
+            self.parent = parent
+        }
+
+        /// Called whenever the text content changes.
+        /// Updates the binding and re-applies syntax highlighting.
+        func textViewDidChange(_ textView: UITextView) {
+            guard !isUpdating else { return }
+
+            // Update binding with plain text
+            let newText: String = textView.text ?? ""
+            if parent.text != newText {
+                parent.text = newText
+            }
+
+            // Re-apply highlighting
+            applyHighlighting(to: textView)
+        }
+
+        /// Creates the keyboard toolbar with undo/redo and formatting buttons.
+        func createKeyboardToolbar(for textView: UITextView) -> UIToolbar {
+            self.textView = textView
+
+            let toolbar: UIToolbar = UIToolbar()
+            toolbar.sizeToFit()
+
+            // Undo button
+            let undoButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "arrow.uturn.backward"),
+                style: .plain,
+                target: self,
+                action: #selector(undoTapped)
+            )
+
+            // Redo button
+            let redoButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "arrow.uturn.forward"),
+                style: .plain,
+                target: self,
+                action: #selector(redoTapped)
+            )
+
+            let separator1: UIBarButtonItem = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+
+            // Header button
+            let headerButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "number"),
+                style: .plain,
+                target: self,
+                action: #selector(insertHeader)
+            )
+
+            // Bold button
+            let boldButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "bold"),
+                style: .plain,
+                target: self,
+                action: #selector(insertBold)
+            )
+
+            // Italic button
+            let italicButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "italic"),
+                style: .plain,
+                target: self,
+                action: #selector(insertItalic)
+            )
+
+            // Code button
+            let codeButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "chevron.left.forwardslash.chevron.right"),
+                style: .plain,
+                target: self,
+                action: #selector(insertCode)
+            )
+
+            // Link button
+            let linkButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "link"),
+                style: .plain,
+                target: self,
+                action: #selector(insertLink)
+            )
+
+            // List button
+            let listButton: UIBarButtonItem = UIBarButtonItem(
+                image: UIImage(systemName: "list.bullet"),
+                style: .plain,
+                target: self,
+                action: #selector(insertList)
+            )
+
+            let separator2: UIBarButtonItem = UIBarButtonItem(barButtonSystemItem: .flexibleSpace, target: nil, action: nil)
+
+            // Done button to dismiss keyboard
+            let doneButton: UIBarButtonItem = UIBarButtonItem(
+                barButtonSystemItem: .done,
+                target: self,
+                action: #selector(dismissKeyboard)
+            )
+
+            toolbar.items = [
+                undoButton, redoButton, separator1,
+                headerButton, boldButton, italicButton, codeButton, linkButton, listButton,
+                separator2, doneButton
+            ]
+
+            return toolbar
+        }
+
+        @objc private func undoTapped() {
+            textView?.undoManager?.undo()
+        }
+
+        @objc private func redoTapped() {
+            textView?.undoManager?.redo()
+        }
+
+        @objc private func dismissKeyboard() {
+            textView?.resignFirstResponder()
+        }
+
+        @objc private func insertHeader() {
+            insertAtCursor(prefix: "## ", suffix: "")
+        }
+
+        @objc private func insertBold() {
+            wrapSelection(prefix: "**", suffix: "**")
+        }
+
+        @objc private func insertItalic() {
+            wrapSelection(prefix: "*", suffix: "*")
+        }
+
+        @objc private func insertCode() {
+            wrapSelection(prefix: "`", suffix: "`")
+        }
+
+        @objc private func insertLink() {
+            wrapSelection(prefix: "[", suffix: "](url)")
+        }
+
+        @objc private func insertList() {
+            insertAtCursor(prefix: "- ", suffix: "")
+        }
+
+        /// Wraps the current selection with prefix and suffix, or inserts them at cursor.
+        private func wrapSelection(prefix: String, suffix: String) {
+            guard let textView = textView else { return }
+
+            let range: NSRange = textView.selectedRange
+            let text: String = textView.text ?? ""
+            let nsText: NSString = text as NSString
+
+            if range.length > 0 {
+                // Wrap selection
+                let selectedText: String = nsText.substring(with: range)
+                let replacement: String = prefix + selectedText + suffix
+                textView.replace(textView.selectedTextRange!, withText: replacement)
+
+                // Move cursor to end of wrapped text
+                let newLocation: Int = range.location + prefix.count + selectedText.count
+                textView.selectedRange = NSRange(location: newLocation, length: 0)
+            } else {
+                // Insert at cursor
+                textView.replace(textView.selectedTextRange!, withText: prefix + suffix)
+
+                // Position cursor between prefix and suffix
+                let newLocation: Int = range.location + prefix.count
+                textView.selectedRange = NSRange(location: newLocation, length: 0)
+            }
+        }
+
+        /// Inserts prefix at the start of the current line.
+        private func insertAtCursor(prefix: String, suffix: String) {
+            guard let textView = textView else { return }
+
+            let range: NSRange = textView.selectedRange
+            let text: String = textView.text ?? ""
+            let nsText: NSString = text as NSString
+
+            // Find start of current line
+            var lineStart: Int = range.location
+            while lineStart > 0 && nsText.character(at: lineStart - 1) != 10 { // 10 = newline
+                lineStart -= 1
+            }
+
+            // Insert prefix at line start
+            let startIndex: String.Index = text.index(text.startIndex, offsetBy: lineStart)
+            var newText: String = text
+            newText.insert(contentsOf: prefix, at: startIndex)
+
+            textView.text = newText
+            parent.text = newText
+
+            // Move cursor after prefix
+            textView.selectedRange = NSRange(location: range.location + prefix.count, length: 0)
+
+            applyHighlighting(to: textView)
+        }
+
+        /// Applies markdown syntax highlighting to the text view.
+        /// Preserves the cursor position during updates.
+        func applyHighlighting(to textView: UITextView) {
+            isUpdating = true
+            defer { isUpdating = false }
+
+            // Save selection
+            let selectedRange: NSRange = textView.selectedRange
+
+            // Get the full text
+            let text: String = textView.text ?? ""
+            guard !text.isEmpty else { return }
+
+            // Create attributed string with base attributes
+            let baseFont: UIFont = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular)
+            let baseColor: UIColor = UIColor.label
+
+            let attributedString: NSMutableAttributedString = NSMutableAttributedString(
+                string: text,
+                attributes: [
+                    .font: baseFont,
+                    .foregroundColor: baseColor
+                ]
+            )
+
+            // Apply markdown patterns in order (later patterns can override earlier)
+            applyCodeBlockHighlighting(to: attributedString, text: text)
+            applyInlineCodeHighlighting(to: attributedString, text: text)
+            applyHeaderHighlighting(to: attributedString, text: text, baseFont: baseFont)
+            applyBoldHighlighting(to: attributedString, text: text, baseFont: baseFont)
+            applyItalicHighlighting(to: attributedString, text: text, baseFont: baseFont)
+            applyListHighlighting(to: attributedString, text: text)
+            applyBlockquoteHighlighting(to: attributedString, text: text)
+            applyLinkHighlighting(to: attributedString, text: text)
+
+            // Apply attributed string to text view
+            textView.attributedText = attributedString
+
+            // Restore selection
+            let maxLocation: Int = text.count
+            if selectedRange.location <= maxLocation {
+                let newLength: Int = min(selectedRange.length, maxLocation - selectedRange.location)
+                textView.selectedRange = NSRange(location: selectedRange.location, length: newLength)
+            }
+        }
+
+        // MARK: - Highlighting Helpers
+
+        /// Highlights fenced code blocks (```...```)
+        private func applyCodeBlockHighlighting(to attributedString: NSMutableAttributedString, text: String) {
+            let pattern: String = "```[a-zA-Z]*\\n[\\s\\S]*?```"
+            applyPattern(
+                pattern,
+                to: attributedString,
+                text: text,
+                attributes: [
+                    .font: UIFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: UIColor.systemOrange,
+                    .backgroundColor: UIColor.systemGray6
+                ]
+            )
+        }
+
+        /// Highlights inline code (`code`)
+        private func applyInlineCodeHighlighting(to attributedString: NSMutableAttributedString, text: String) {
+            let pattern: String = "`[^`\\n]+`"
+            applyPattern(
+                pattern,
+                to: attributedString,
+                text: text,
+                attributes: [
+                    .font: UIFont.monospacedSystemFont(ofSize: 14, weight: .regular),
+                    .foregroundColor: UIColor.systemOrange,
+                    .backgroundColor: UIColor.systemGray6
+                ]
+            )
+        }
+
+        /// Highlights headers (# Header)
+        private func applyHeaderHighlighting(to attributedString: NSMutableAttributedString, text: String, baseFont: UIFont) {
+            let headerConfigs: [(pattern: String, size: CGFloat, weight: UIFont.Weight)] = [
+                ("^#{6}\\s+.+$", 15, .semibold),  // H6
+                ("^#{5}\\s+.+$", 16, .semibold),  // H5
+                ("^#{4}\\s+.+$", 17, .semibold),  // H4
+                ("^#{3}\\s+.+$", 18, .bold),      // H3
+                ("^#{2}\\s+.+$", 20, .bold),      // H2
+                ("^#{1}\\s+.+$", 22, .bold),      // H1
+            ]
+
+            for config in headerConfigs {
+                applyPattern(
+                    config.pattern,
+                    to: attributedString,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .font: UIFont.monospacedSystemFont(ofSize: config.size, weight: config.weight),
+                        .foregroundColor: UIColor.systemBlue
+                    ]
+                )
+            }
+        }
+
+        /// Highlights bold text (**text** or __text__)
+        private func applyBoldHighlighting(to attributedString: NSMutableAttributedString, text: String, baseFont: UIFont) {
+            let patterns: [String] = [
+                "\\*\\*[^*\\n]+\\*\\*",
+                "__[^_\\n]+__"
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: attributedString,
+                    text: text,
+                    attributes: [
+                        .font: UIFont.monospacedSystemFont(ofSize: 15, weight: .bold)
+                    ]
+                )
+            }
+        }
+
+        /// Highlights italic text (*text* or _text_)
+        private func applyItalicHighlighting(to attributedString: NSMutableAttributedString, text: String, baseFont: UIFont) {
+            let patterns: [String] = [
+                "(?<!\\*)\\*[^*\\n]+\\*(?!\\*)",
+                "(?<!_)_[^_\\n]+_(?!_)"
+            ]
+
+            // Create italic font
+            let italicFont: UIFont = {
+                let descriptor: UIFontDescriptor = UIFont.monospacedSystemFont(ofSize: 15, weight: .regular).fontDescriptor
+                let italicDescriptor: UIFontDescriptor = descriptor.withSymbolicTraits(.traitItalic) ?? descriptor
+                return UIFont(descriptor: italicDescriptor, size: 15)
+            }()
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: attributedString,
+                    text: text,
+                    attributes: [
+                        .font: italicFont,
+                        .foregroundColor: UIColor.label
+                    ]
+                )
+            }
+        }
+
+        /// Highlights list markers (-, *, numbered)
+        private func applyListHighlighting(to attributedString: NSMutableAttributedString, text: String) {
+            let patterns: [String] = [
+                "^\\s*[-*+]\\s",
+                "^\\s*\\d+\\.\\s"
+            ]
+
+            for pattern in patterns {
+                applyPattern(
+                    pattern,
+                    to: attributedString,
+                    text: text,
+                    options: [.anchorsMatchLines],
+                    attributes: [
+                        .foregroundColor: UIColor.systemPurple
+                    ]
+                )
+            }
+        }
+
+        /// Highlights blockquotes (> text)
+        private func applyBlockquoteHighlighting(to attributedString: NSMutableAttributedString, text: String) {
+            let pattern: String = "^>\\s*.+$"
+            applyPattern(
+                pattern,
+                to: attributedString,
+                text: text,
+                options: [.anchorsMatchLines],
+                attributes: [
+                    .foregroundColor: UIColor.systemGray,
+                    .backgroundColor: UIColor.systemGray6
+                ]
+            )
+        }
+
+        /// Highlights links [text](url)
+        private func applyLinkHighlighting(to attributedString: NSMutableAttributedString, text: String) {
+            let pattern: String = "\\[([^\\]]+)\\]\\(([^)]+)\\)"
+            applyPattern(
+                pattern,
+                to: attributedString,
+                text: text,
+                attributes: [
+                    .foregroundColor: UIColor.link,
+                    .underlineStyle: NSUnderlineStyle.single.rawValue
+                ]
+            )
+        }
+
+        /// Helper to apply regex-based highlighting.
+        private func applyPattern(
+            _ pattern: String,
+            to attributedString: NSMutableAttributedString,
+            text: String,
+            options: NSRegularExpression.Options = [],
+            attributes: [NSAttributedString.Key: Any]
+        ) {
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: options) else {
+                return
+            }
+
+            let nsText: NSString = text as NSString
+            let fullRange: NSRange = NSRange(location: 0, length: nsText.length)
+
+            regex.enumerateMatches(in: text, options: [], range: fullRange) { match, _, _ in
+                guard let matchRange = match?.range else { return }
+                attributedString.addAttributes(attributes, range: matchRange)
             }
         }
     }
@@ -1694,6 +2448,220 @@ struct IOSCloudBoardCreator: View {
         } catch {
             errorMessage = "Failed to create board: \(error.localizedDescription)"
             isCreating = false
+        }
+    }
+}
+
+// MARK: - View Extension for Conditional Modifiers
+
+/// Extension to conditionally apply view modifiers.
+///
+/// Useful for applying modifiers only when certain conditions are met,
+/// like only enabling drag when not in selection mode.
+extension View {
+    /// Applies a transformation only when the condition is true.
+    ///
+    /// - Parameters:
+    ///   - condition: The condition to check
+    ///   - transform: The transformation to apply when condition is true
+    /// - Returns: Either the transformed view or the original view
+    @ViewBuilder
+    func `if`<Content: View>(_ condition: Bool, transform: (Self) -> Content) -> some View {
+        if condition {
+            transform(self)
+        } else {
+            self
+        }
+    }
+}
+
+// MARK: - Bulk Action Bar
+
+/// Bottom toolbar showing bulk actions when cards are selected.
+///
+/// iPad-native design with icons and labels for common bulk operations:
+/// - Move to column
+/// - Add/remove labels
+/// - Archive
+/// - Delete
+struct IOSBulkActionBar: View {
+    let selectedCount: Int
+    let onMove: () -> Void
+    let onLabel: () -> Void
+    let onArchive: () -> Void
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(spacing: 24) {
+            // Move button
+            Button(action: onMove) {
+                VStack(spacing: 4) {
+                    Image(systemName: "arrow.right.square")
+                        .font(.title2)
+                    Text("Move")
+                        .font(.caption)
+                }
+            }
+            .foregroundStyle(.primary)
+
+            // Label button
+            Button(action: onLabel) {
+                VStack(spacing: 4) {
+                    Image(systemName: "tag")
+                        .font(.title2)
+                    Text("Labels")
+                        .font(.caption)
+                }
+            }
+            .foregroundStyle(.primary)
+
+            // Archive button
+            Button(action: onArchive) {
+                VStack(spacing: 4) {
+                    Image(systemName: "archivebox")
+                        .font(.title2)
+                    Text("Archive")
+                        .font(.caption)
+                }
+            }
+            .foregroundStyle(.orange)
+
+            // Delete button
+            Button(action: onDelete) {
+                VStack(spacing: 4) {
+                    Image(systemName: "trash")
+                        .font(.title2)
+                    Text("Delete")
+                        .font(.caption)
+                }
+            }
+            .foregroundStyle(.red)
+        }
+        .padding(.horizontal, 32)
+        .padding(.vertical, 12)
+        .background(.regularMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
+        .padding(.bottom, 8)
+    }
+}
+
+// MARK: - Bulk Move Sheet
+
+/// Sheet for moving selected cards to a column.
+struct IOSBulkMoveSheet: View {
+    let selectedCount: Int
+    let columns: [Column]
+    let onMove: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(columns, id: \.id) { column in
+                        Button {
+                            onMove(column.id)
+                        } label: {
+                            HStack {
+                                Text(column.name)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .foregroundStyle(.tertiary)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: {
+                    Text("Select destination column")
+                } footer: {
+                    Text("All \(selectedCount) selected card\(selectedCount == 1 ? "" : "s") will be moved to the chosen column.")
+                }
+            }
+            .navigationTitle("Move \(selectedCount) Card\(selectedCount == 1 ? "" : "s")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Bulk Label Sheet
+
+/// Sheet for adding or removing labels from selected cards.
+struct IOSBulkLabelSheet: View {
+    let selectedCount: Int
+    let labels: [CardLabel]
+    let onAddLabel: (String) -> Void
+    let onRemoveLabel: (String) -> Void
+    let onDone: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if labels.isEmpty {
+                    Section {
+                        Text("No labels defined. Create labels in Board Settings.")
+                            .foregroundStyle(.secondary)
+                            .italic()
+                    }
+                } else {
+                    Section {
+                        ForEach(labels, id: \.id) { label in
+                            HStack(spacing: 12) {
+                                // Label chip
+                                Text(label.name)
+                                    .font(.system(size: 12, weight: .medium))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background((Color(hex: label.color) ?? .gray).opacity(0.2))
+                                    .foregroundStyle(Color(hex: label.color) ?? .gray)
+                                    .clipShape(Capsule())
+
+                                Spacer()
+
+                                // Add button
+                                Button {
+                                    onAddLabel(label.id)
+                                } label: {
+                                    Image(systemName: "plus.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.green)
+                                }
+                                .buttonStyle(.plain)
+
+                                // Remove button
+                                Button {
+                                    onRemoveLabel(label.id)
+                                } label: {
+                                    Image(systemName: "minus.circle.fill")
+                                        .font(.title2)
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    } header: {
+                        Text("Tap + to add, − to remove")
+                    } footer: {
+                        Text("Changes apply immediately to all \(selectedCount) selected card\(selectedCount == 1 ? "" : "s").")
+                    }
+                }
+            }
+            .navigationTitle("Labels for \(selectedCount) Card\(selectedCount == 1 ? "" : "s")")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        onDone()
+                    }
+                }
+            }
         }
     }
 }
