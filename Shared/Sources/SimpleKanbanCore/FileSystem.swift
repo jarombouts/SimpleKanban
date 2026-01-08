@@ -100,7 +100,13 @@ public enum BoardLoader {
             for cardURL in cardFiles {
                 do {
                     let cardContent: String = try String(contentsOf: cardURL, encoding: .utf8)
-                    let card: Card = try Card.parse(from: cardContent)
+                    var card: Card = try Card.parse(from: cardContent)
+
+                    // Capture the original filename slug so we can save back to the same file.
+                    // This handles cards created externally with non-standard slugs.
+                    let filename: String = cardURL.deletingPathExtension().lastPathComponent
+                    card.sourceSlug = filename
+
                     cards.append(card)
                 } catch {
                     // Log warning but continue loading other cards
@@ -164,9 +170,26 @@ public enum CardWriter {
             try fileManager.createDirectory(at: columnDir, withIntermediateDirectories: true)
         }
 
-        let newSlug: String = slugify(card.title)
-        let newFilename: String = "\(newSlug).md"
-        let newPath: URL = columnDir.appendingPathComponent(newFilename)
+        // Determine the filename slug to use:
+        // - For title renames: use the new slugified title
+        // - For existing cards without title change: preserve sourceSlug if available
+        // - For new cards: compute from title
+        let titleChanged: Bool = previousTitle != nil && previousTitle != card.title
+        let computedSlug: String = slugify(card.title)
+        let targetSlug: String
+        if titleChanged || isNew {
+            // Title changed or new card - use computed slug
+            targetSlug = computedSlug
+        } else if let sourceSlug = card.sourceSlug {
+            // Existing card, title unchanged - preserve original filename
+            targetSlug = sourceSlug
+        } else {
+            // Fallback to computed slug
+            targetSlug = computedSlug
+        }
+
+        let targetFilename: String = "\(targetSlug).md"
+        let targetPath: URL = columnDir.appendingPathComponent(targetFilename)
 
         // Check for duplicate title on new cards - must check ALL column directories
         // because titles must be unique across the entire board.
@@ -198,24 +221,26 @@ public enum CardWriter {
         // Handle column change (file moves to different directory)
         if let oldColumn = previousColumn, oldColumn != card.column {
             let oldColumnDir: URL = cardsURL.appendingPathComponent(oldColumn)
-            let oldSlug: String = previousTitle.map { slugify($0) } ?? newSlug
+            // Use sourceSlug for old path if available, otherwise compute from previous title
+            let oldSlug: String = card.sourceSlug ?? previousTitle.map { slugify($0) } ?? targetSlug
             let oldPath: URL = oldColumnDir.appendingPathComponent("\(oldSlug).md")
 
             if fileManager.fileExists(atPath: oldPath.path) {
-                // Check if target already exists
-                if fileManager.fileExists(atPath: newPath.path) {
+                // Check if target already exists (and is different from source)
+                if oldPath != targetPath && fileManager.fileExists(atPath: targetPath.path) {
                     throw CardWriterError.duplicateTitle(card.title)
                 }
                 try fileManager.removeItem(at: oldPath)
             }
         }
         // Handle title rename within same column
-        else if let oldTitle = previousTitle, oldTitle != card.title {
-            let oldSlug: String = slugify(oldTitle)
+        else if titleChanged {
+            // Use sourceSlug for old path if available, otherwise compute from previous title
+            let oldSlug: String = card.sourceSlug ?? slugify(previousTitle!)
             let oldPath: URL = columnDir.appendingPathComponent("\(oldSlug).md")
 
             if fileManager.fileExists(atPath: oldPath.path) {
-                if fileManager.fileExists(atPath: newPath.path) {
+                if oldPath != targetPath && fileManager.fileExists(atPath: targetPath.path) {
                     throw CardWriterError.duplicateTitle(card.title)
                 }
                 try fileManager.removeItem(at: oldPath)
@@ -224,7 +249,7 @@ public enum CardWriter {
 
         // Write card to file (atomic write via temp file)
         let markdown: String = card.toMarkdown()
-        try markdown.write(to: newPath, atomically: true, encoding: .utf8)
+        try markdown.write(to: targetPath, atomically: true, encoding: .utf8)
     }
 
     /// Deletes a card file.
@@ -233,7 +258,8 @@ public enum CardWriter {
     ///   - card: The card to delete
     ///   - boardURL: The board directory URL
     public static func delete(_ card: Card, in boardURL: URL) throws {
-        let slug: String = slugify(card.title)
+        // Use sourceSlug if available to handle non-standard filenames
+        let slug: String = card.sourceSlug ?? slugify(card.title)
         let cardPath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(slug).md")
 
         if FileManager.default.fileExists(atPath: cardPath.path) {
@@ -253,7 +279,8 @@ public enum CardWriter {
     @discardableResult
     public static func archive(_ card: Card, in boardURL: URL) throws -> URL {
         let fileManager: FileManager = FileManager.default
-        let slug: String = slugify(card.title)
+        // Use sourceSlug if available to handle non-standard filenames
+        let slug: String = card.sourceSlug ?? slugify(card.title)
 
         let sourcePath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(slug).md")
         let archiveDir: URL = boardURL.appendingPathComponent("archive")

@@ -38,6 +38,17 @@ public struct Card: Equatable, Sendable, Identifiable {
     public var labels: [String]
     public var body: String
 
+    /// The original filename slug when loaded from disk.
+    ///
+    /// This preserves the source filename for cards that were created externally
+    /// with a non-standard slug. When saving, we use this slug if the title hasn't
+    /// changed, ensuring we update the original file rather than creating a new one.
+    ///
+    /// Example: A card with title "iOS Feature Parity - Remaining Items" might be
+    /// stored as `ios-feature-parity-remaining.md` (shortened slug). Without tracking
+    /// the source slug, saving would create `ios-feature-parity-remaining-items.md`.
+    public var sourceSlug: String?
+
     public init(
         title: String,
         column: String,
@@ -45,7 +56,8 @@ public struct Card: Equatable, Sendable, Identifiable {
         created: Date = Date(),
         modified: Date = Date(),
         labels: [String] = [],
-        body: String = ""
+        body: String = "",
+        sourceSlug: String? = nil
     ) {
         self.title = title
         self.column = column
@@ -54,6 +66,7 @@ public struct Card: Equatable, Sendable, Identifiable {
         self.modified = modified
         self.labels = labels
         self.body = body
+        self.sourceSlug = sourceSlug
     }
 }
 
