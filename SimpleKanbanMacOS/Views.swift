@@ -209,15 +209,22 @@ struct BoardView: View {
     var body: some View {
         VStack(spacing: 0) {
             GeometryReader { geometry in
-                let columnCount: Int = store.board.columns.count
+                let baseColumnCount: Int = store.board.columns.count
+                // Include archive column in count when shown
+                let totalColumnCount: Int = baseColumnCount + (store.showArchive ? 1 : 0)
                 let padding: CGFloat = 16
                 let spacing: CGFloat = 16
-                let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(columnCount - 1)
-                let columnWidth: CGFloat = max(250, (geometry.size.width - totalSpacing) / CGFloat(columnCount))
+                let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(baseColumnCount - 1)
+                let columnWidth: CGFloat = max(250, (geometry.size.width - totalSpacing) / CGFloat(baseColumnCount))
 
-                ScrollView(.horizontal, showsIndicators: true) {
-                    HStack(alignment: .top, spacing: spacing) {
-                        ForEach(store.board.columns, id: \.id) { column in
+                // Calculate if content overflows (needs horizontal scroll)
+                let contentWidth: CGFloat = CGFloat(totalColumnCount) * columnWidth + CGFloat(max(0, totalColumnCount - 1)) * spacing + padding * 2
+                let hasOverflow: Bool = contentWidth > geometry.size.width
+
+                ScrollViewReader { scrollProxy in
+                    ScrollView(.horizontal, showsIndicators: true) {
+                        HStack(alignment: .top, spacing: spacing) {
+                            ForEach(store.board.columns, id: \.id) { column in
                             ColumnView(
                                 column: column,
                                 cards: store.filteredCards(forColumn: column.id),
@@ -273,9 +280,50 @@ struct BoardView: View {
                                 }
                             )
                         }
+
+                        // Archive column - shown when toggle is on
+                        if store.showArchive {
+                            ArchiveColumnView(
+                                cards: store.archivedCards,
+                                labels: store.board.labels,
+                                columnWidth: columnWidth,
+                                onCardDoubleTap: { card in
+                                    editingCard = card
+                                }
+                            )
+                            .id("archive-column")
+                        }
                     }
                     .padding(padding)
+                    // Force re-render when archive visibility changes
+                    // This ensures the conditional `if store.showArchive` is re-evaluated
+                    .id(store.showArchive)
+                    // Auto-scroll to archive column when it's shown
+                    .onChange(of: store.showArchive) { _, isShowing in
+                        if isShowing {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                scrollProxy.scrollTo("archive-column", anchor: .trailing)
+                            }
+                        }
+                    }
                 }
+                // Scroll affordance - gradient on right edge when content overflows
+                // This visual cue indicates there's more content to scroll to
+                .overlay(alignment: .trailing) {
+                    if hasOverflow {
+                        LinearGradient(
+                            colors: [
+                                Color(nsColor: .windowBackgroundColor).opacity(0),
+                                Color(nsColor: .windowBackgroundColor).opacity(0.8)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 30)
+                        .allowsHitTesting(false)
+                    }
+                }
+            }
                 // Overlay "No results" message when filtering returns no cards
                 .overlay {
                     if store.isFiltering && store.filteredCards.isEmpty {
@@ -414,43 +462,16 @@ struct BoardView: View {
             }
 
             ToolbarItemGroup(placement: .automatic) {
-                // Archive button - enabled when cards selected, also accepts drag
-                ArchiveToolbarButton(
-                    isEnabled: !selectedCardTitles.isEmpty,
-                    onArchive: {
-                        // Calculate next selection BEFORE archiving
-                        let nextSelection: String? = findNextSelection(afterDeleting: selectedCardTitles)
-
-                        let cards: [Card] = store.cards(withTitles: selectedCardTitles)
-                        try? store.archiveCards(cards)
-
-                        // Update selection to nearby card
-                        if let next = nextSelection {
-                            selectSingle(next)
-                        } else {
-                            clearSelection()
-                        }
-                    },
-                    onDrop: { titles in
-                        let cards: [Card] = store.cards(withTitles: titles)
-                        try? store.archiveCards(cards)
-                        // Remove dropped cards from selection
-                        selectedCardTitles.subtract(titles)
+                // Archive column toggle - shows/hides the archive column
+                Button {
+                    store.showArchive.toggle()
+                    if store.showArchive {
+                        store.reloadArchivedCards()
                     }
-                )
-
-                // Delete button - enabled when cards selected, also accepts drag
-                DeleteToolbarButton(
-                    isEnabled: !selectedCardTitles.isEmpty,
-                    onDelete: {
-                        cardsToDelete = selectedCardTitles
-                        showDeleteConfirmation = true
-                    },
-                    onDrop: { titles in
-                        cardsToDelete = titles
-                        showDeleteConfirmation = true
-                    }
-                )
+                } label: {
+                    Image(systemName: store.showArchive ? "archivebox.fill" : "archivebox")
+                }
+                .help(store.showArchive ? "Hide archive" : "Show archive")
 
                 // Git sync status indicator (only shown if board is in a git repository)
                 if let gitSync = gitSync {
@@ -556,6 +577,10 @@ struct BoardView: View {
                     showBoardSettings = false
                 }
             )
+        }
+        // Publish settings action for Cmd+, menu shortcut
+        .focusedSceneValue(\.showSettings) {
+            showBoardSettings = true
         }
         .alert("Error", isPresented: $showErrorAlert) {
             Button("OK", role: .cancel) {
@@ -1257,6 +1282,116 @@ struct ColumnView: View {
         )
     }
 
+}
+
+// MARK: - Archive Column View
+
+/// A read-only column displaying archived cards.
+///
+/// Visually distinct from regular columns with a muted background.
+/// Cards cannot be reordered or moved from this view.
+/// Double-click opens card for viewing (read-only).
+struct ArchiveColumnView: View {
+    let cards: [Card]
+    let labels: [CardLabel]
+    let columnWidth: CGFloat
+
+    let onCardDoubleTap: (Card) -> Void
+
+    /// Deduplicates cards by title to prevent ForEach crashes from duplicate IDs.
+    private var uniqueCards: [Card] {
+        var seen: Set<String> = []
+        return cards.filter { card in
+            if seen.contains(card.title) {
+                return false
+            }
+            seen.insert(card.title)
+            return true
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            headerView
+            cardListView
+        }
+        .frame(width: columnWidth)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.secondary.opacity(0.06))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.15), lineWidth: 1)
+        )
+    }
+
+    /// Header with archive icon and card count
+    @ViewBuilder
+    private var headerView: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "archivebox.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+
+            Text("Archive")
+                .font(.headline)
+                .fontWeight(.semibold)
+
+            Spacer()
+
+            Text("\(cards.count)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.secondary.opacity(0.2))
+                .clipShape(Capsule())
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(Color.secondary.opacity(0.12))
+    }
+
+    /// Scrollable list of archived cards
+    @ViewBuilder
+    private var cardListView: some View {
+        ScrollView(.vertical, showsIndicators: true) {
+            VStack(spacing: 6) {
+                if uniqueCards.isEmpty {
+                    emptyStateView
+                }
+
+                ForEach(uniqueCards, id: \.title) { card in
+                    CardView(
+                        card: card,
+                        labels: labels,
+                        isSelected: false
+                    )
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        onCardDoubleTap(card)
+                    }
+                }
+            }
+            .padding(8)
+        }
+    }
+
+    /// Empty state shown when no archived cards
+    @ViewBuilder
+    private var emptyStateView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 24))
+                .foregroundStyle(.tertiary)
+            Text("No archived cards")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 24)
+    }
 }
 
 // MARK: - CardFramePreferenceKey
@@ -2361,54 +2496,34 @@ struct GitStatusIndicator: View {
                 .foregroundStyle(.tertiary)
 
         case .synced:
-            HStack(spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-                Text("Synced")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("Local is up to date with remote")
+            Text("Synced")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("Local is up to date with remote")
 
         case .behind(let count):
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.down.circle.fill")
-                    .foregroundStyle(.blue)
-                Text("\(count) behind")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("Remote has \(count) new commit\(count == 1 ? "" : "s") — auto-pulling")
+            Text("↓ \(count) behind")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("Remote has \(count) new commit\(count == 1 ? "" : "s") — auto-pulling")
 
         case .ahead(let count):
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .foregroundStyle(.yellow)
-                Text("\(count) ahead")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("\(count) local commit\(count == 1 ? "" : "s") to push")
+            Text("↑ \(count) ahead")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("\(count) local commit\(count == 1 ? "" : "s") to push")
 
         case .diverged(let ahead, let behind):
-            HStack(spacing: 4) {
-                Image(systemName: "arrow.up.arrow.down.circle.fill")
-                    .foregroundStyle(.orange)
-                Text("\(ahead)↑ \(behind)↓")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("\(ahead) local, \(behind) remote commits — push to sync")
+            Text("↑\(ahead) ↓\(behind)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .help("\(ahead) local, \(behind) remote commits — push to sync")
 
         case .uncommitted:
-            HStack(spacing: 4) {
-                Image(systemName: "circle.lefthalf.filled")
-                    .foregroundStyle(.gray)
-                Text("Uncommitted")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("Uncommitted changes — commit to enable sync")
+            Text("Uncommitted")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .help("Uncommitted changes — commit to enable sync")
 
         case .syncing:
             HStack(spacing: 4) {
@@ -2420,24 +2535,16 @@ struct GitStatusIndicator: View {
             }
 
         case .conflict:
-            HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .foregroundStyle(.red)
-                Text("Conflict")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("Merge conflict — resolve in terminal")
+            Text("⚠ Conflict")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .help("Merge conflict — resolve in terminal")
 
         case .error(let message):
-            HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.circle.fill")
-                    .foregroundStyle(.red)
-                Text("Error")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            .help("Git error: \(message)")
+            Text("Error")
+                .font(.caption)
+                .foregroundStyle(.red)
+                .help("Git error: \(message)")
         }
     }
 

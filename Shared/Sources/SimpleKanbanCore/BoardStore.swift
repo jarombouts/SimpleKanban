@@ -71,6 +71,26 @@ public final class BoardStore: @unchecked Sendable {
         return !searchText.isEmpty || !filterLabels.isEmpty
     }
 
+    // MARK: - Archive State
+
+    /// Archived cards, sorted by date (newest first).
+    /// These are loaded from the archive/ directory.
+    public private(set) var archivedCards: [Card] = []
+
+    /// Whether to show the archive column in the UI.
+    public var showArchive: Bool = false
+
+    /// Reloads archived cards from disk.
+    /// Called when archive visibility is toggled on, or after archiving/unarchiving.
+    public func reloadArchivedCards() {
+        do {
+            archivedCards = try BoardLoader.loadArchivedCards(from: url)
+        } catch {
+            print("Warning: Failed to load archived cards: \(error)")
+            archivedCards = []
+        }
+    }
+
     /// Creates a BoardStore by loading an existing board from disk.
     ///
     /// - Parameter url: The directory containing board.md and cards/
@@ -986,6 +1006,16 @@ public final class BoardStore: @unchecked Sendable {
         try BoardWriter.save(board, in: url)
     }
 
+    /// Updates the card template.
+    ///
+    /// The card template is the default body content for new cards.
+    ///
+    /// - Parameter template: The new template (markdown content)
+    public func updateCardTemplate(_ template: String) throws {
+        board.cardTemplate = template
+        try BoardWriter.save(board, in: url)
+    }
+
     /// Adds a new column to the board.
     ///
     /// - Parameters:
@@ -1150,10 +1180,19 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Removes a card by its slug (used when externally deleted).
     ///
-    /// - Parameter slug: The slugified title of the card to remove
+    /// Checks both the card's sourceSlug (original filename) and the slugified title
+    /// to handle cards with non-standard filenames.
+    ///
+    /// - Parameter slug: The filename slug of the card to remove
     /// - Returns: true if a card was removed, false otherwise
     @discardableResult
     public func removeCard(bySlug slug: String) -> Bool {
+        // First check sourceSlug (actual filename) since cards may have non-standard filenames
+        if let index: Int = cards.firstIndex(where: { $0.sourceSlug == slug }) {
+            cards.remove(at: index)
+            return true
+        }
+        // Fallback to slugified title for cards without a sourceSlug
         if let index: Int = cards.firstIndex(where: { slugify($0.title) == slug }) {
             cards.remove(at: index)
             return true
@@ -1162,9 +1201,12 @@ public final class BoardStore: @unchecked Sendable {
     }
 
     /// Removes cards that no longer exist on disk.
+    ///
+    /// Uses sourceSlug when available, falls back to slugified title.
     public func removeCards(notIn existingSlugs: Set<String>) {
         cards.removeAll { card in
-            let slug: String = slugify(card.title)
+            // Use sourceSlug if available, otherwise fall back to slugified title
+            let slug: String = card.sourceSlug ?? slugify(card.title)
             return !existingSlugs.contains(slug)
         }
     }

@@ -155,12 +155,6 @@ struct IOSBoardView: View {
     /// Whether to show board settings sheet
     @State private var showBoardSettings: Bool = false
 
-    /// Whether to show delete confirmation
-    @State private var showDeleteConfirmation: Bool = false
-
-    /// Card title pending deletion (from drop on trash)
-    @State private var cardToDelete: String? = nil
-
     /// Whether to show bulk delete confirmation
     @State private var showBulkDeleteConfirmation: Bool = false
 
@@ -170,31 +164,76 @@ struct IOSBoardView: View {
     /// Whether to show bulk label action sheet
     @State private var showBulkLabelSheet: Bool = false
 
+    /// Title of card currently being dragged (shared across all columns)
+    /// Lifted to parent so all columns can see what's being dragged
+    @State private var draggingCardTitle: String? = nil
+
+    /// Currently focused card for keyboard navigation (iPad with hardware keyboard)
+    @State private var focusedCardTitle: String? = nil
+
+    /// Whether to show delete confirmation for keyboard-triggered delete
+    @State private var showDeleteConfirmation: Bool = false
+
+    /// Card to delete (set before showing confirmation)
+    @State private var cardToDelete: Card? = nil
+
+    /// Collapsed columns (by column ID) - persists within session
+    @State private var collapsedColumns: Set<String> = []
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
+                // Invisible drop target behind everything to catch cancelled drags
+                // This ensures draggingCardTitle is reset if drop fails
+                Color.clear
+                    .dropDestination(for: String.self) { _, _ in
+                        // Drop on background means cancellation - reset state
+                        draggingCardTitle = nil
+                        return false
+                    }
+
                 // Main board content
                 GeometryReader { geometry in
                     // Calculate dynamic column width:
                     // - Show at most 3 columns side-by-side
                     // - If fewer columns exist, expand to fill available space
                     // - Minimum width: 280pt for touch-friendly interaction
-                    let columnCount: Int = store.board.columns.count
+                    let baseColumnCount: Int = store.board.columns.count
+                    // Include archive column in count when shown
+                    let totalColumnCount: Int = baseColumnCount + (store.showArchive ? 1 : 0)
                     let padding: CGFloat = 16
                     let spacing: CGFloat = 16
-                    let visibleColumns: Int = min(columnCount, 3)
+                    let visibleColumns: Int = min(baseColumnCount, 3)
                     let totalSpacing: CGFloat = padding * 2 + spacing * CGFloat(visibleColumns - 1)
                     let columnWidth: CGFloat = max(280, (geometry.size.width - totalSpacing) / CGFloat(visibleColumns))
 
-                    ScrollView(.horizontal, showsIndicators: true) {
-                        HStack(alignment: .top, spacing: spacing) {
+                    // Calculate if horizontal scroll is needed (including archive column if shown)
+                    // Content width = columns + spacing between them + padding
+                    let contentWidth: CGFloat = CGFloat(totalColumnCount) * columnWidth + CGFloat(max(0, totalColumnCount - 1)) * spacing + padding * 2
+                    let needsHorizontalScroll: Bool = contentWidth > geometry.size.width
+
+                    // Always use ScrollViewReader for programmatic scrolling to archive
+                    ScrollViewReader { scrollProxy in
+                        // Column content
+                        let columnContent = HStack(alignment: .top, spacing: spacing) {
                             ForEach(store.board.columns, id: \.id) { column in
                                 IOSColumnView(
                                     column: column,
                                     cards: store.filteredCards(forColumn: column.id),
                                     columnWidth: columnWidth,
+                                    isCollapsed: collapsedColumns.contains(column.id),
+                                    onToggleCollapse: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            if collapsedColumns.contains(column.id) {
+                                                collapsedColumns.remove(column.id)
+                                            } else {
+                                                collapsedColumns.insert(column.id)
+                                            }
+                                        }
+                                    },
                                     selectedTitles: $selectedCardTitles,
                                     isSelectionMode: isSelectionMode,
+                                    draggingCardTitle: $draggingCardTitle,
                                     onCardTap: { card in
                                         if isSelectionMode {
                                             // Toggle selection
@@ -213,10 +252,46 @@ struct IOSBoardView: View {
                                     store: store
                                 )
                             }
+
+                            // Archive column - shown when toggle is on
+                            if store.showArchive {
+                                IOSArchiveColumnView(
+                                    cards: store.archivedCards,
+                                    columnWidth: columnWidth,
+                                    labels: store.board.labels,
+                                    onCardTap: { card in
+                                        editingCard = card
+                                    }
+                                )
+                                .id("archive-column")
+                            }
                         }
                         .padding(padding)
                         // Add bottom padding when bulk action bar is visible
                         .padding(.bottom, isSelectionMode && !selectedCardTitles.isEmpty ? 80 : 0)
+
+                        // Only enable horizontal scroll if content exceeds available width
+                        if needsHorizontalScroll {
+                            ScrollView(.horizontal, showsIndicators: true) {
+                                columnContent
+                            }
+                            .id(store.showArchive)
+                        } else {
+                            // No scroll needed - columns fit on screen
+                            columnContent
+                                .id(store.showArchive)
+                        }
+
+                        // Empty view that triggers auto-scroll when archive is shown
+                        Color.clear
+                            .frame(width: 0, height: 0)
+                            .onChange(of: store.showArchive) { _, isShowing in
+                                if isShowing {
+                                    withAnimation(.easeInOut(duration: 0.3)) {
+                                        scrollProxy.scrollTo("archive-column", anchor: .trailing)
+                                    }
+                                }
+                            }
                     }
                 }
 
@@ -284,15 +359,15 @@ struct IOSBoardView: View {
                             )
                         }
 
-                        // Archive button (drop target)
-                        IOSArchiveToolbarButton(store: store)
-
-                        // Delete button (drop target)
-                        IOSDeleteToolbarButton(
-                            store: store,
-                            showConfirmation: $showDeleteConfirmation,
-                            cardToDelete: $cardToDelete
-                        )
+                        // Archive column toggle - shows/hides the archive column
+                        Button {
+                            store.showArchive.toggle()
+                            if store.showArchive {
+                                store.reloadArchivedCards()
+                            }
+                        } label: {
+                            Image(systemName: store.showArchive ? "archivebox.fill" : "archivebox")
+                        }
 
                         // Settings gear
                         Button {
@@ -342,21 +417,6 @@ struct IOSBoardView: View {
                     onDone: { showBulkLabelSheet = false }
                 )
             }
-            .alert("Delete Card?", isPresented: $showDeleteConfirmation) {
-                Button("Cancel", role: .cancel) {
-                    cardToDelete = nil
-                }
-                Button("Delete", role: .destructive) {
-                    if let title = cardToDelete, let card = store.card(withTitle: title) {
-                        try? store.deleteCard(card)
-                    }
-                    cardToDelete = nil
-                }
-            } message: {
-                if let title = cardToDelete {
-                    Text("Are you sure you want to delete \"\(title)\"?")
-                }
-            }
             .confirmationDialog(
                 "Delete \(selectedCardTitles.count) Card\(selectedCardTitles.count == 1 ? "" : "s")?",
                 isPresented: $showBulkDeleteConfirmation,
@@ -376,7 +436,311 @@ struct IOSBoardView: View {
             .onChange(of: undoManager) { _, newValue in
                 store.undoManager = newValue
             }
+            // Single card delete confirmation (keyboard-triggered)
+            .alert("Delete Card?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    cardToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let card = cardToDelete {
+                        try? store.deleteCard(card)
+                        // Move focus to next card if possible
+                        focusedCardTitle = nil
+                    }
+                    cardToDelete = nil
+                }
+            } message: {
+                if let card = cardToDelete {
+                    Text("Delete \"\(card.title)\"? This cannot be undone.")
+                }
+            }
+            // Hardware keyboard support for iPad
+            .focusable()
+            .onKeyPress { press in
+                handleKeyPress(press)
+            }
         }
+    }
+
+    // MARK: - Keyboard Navigation (iPad)
+
+    /// Handles hardware keyboard input for iPad users.
+    ///
+    /// Supports:
+    /// - Arrow keys for navigation between cards
+    /// - Enter to edit selected card
+    /// - Delete/Backspace to delete card
+    /// - Cmd+Backspace to archive card
+    /// - Cmd+1/2/3 to move card to column
+    /// - Escape to clear selection
+    private func handleKeyPress(_ press: KeyPress) -> KeyPress.Result {
+        // Handle modifier keys
+        let hasCmd: Bool = press.modifiers.contains(.command)
+
+        switch press.key {
+        // Arrow keys - navigation
+        case .upArrow:
+            navigateUp()
+            return .handled
+        case .downArrow:
+            navigateDown()
+            return .handled
+        case .leftArrow:
+            if hasCmd {
+                // Cmd+Left: move card to previous column
+                moveCardToPreviousColumn()
+            } else {
+                navigateLeft()
+            }
+            return .handled
+        case .rightArrow:
+            if hasCmd {
+                // Cmd+Right: move card to next column
+                moveCardToNextColumn()
+            } else {
+                navigateRight()
+            }
+            return .handled
+
+        // Enter - edit card
+        case .return:
+            if let title = focusedCardTitle,
+               let card = store.card(withTitle: title) {
+                editingCard = card
+            }
+            return .handled
+
+        // Delete - delete card (with confirmation)
+        case .delete:
+            if hasCmd {
+                // Cmd+Delete: archive card
+                archiveFocusedCard()
+            } else {
+                // Delete: delete card with confirmation
+                deleteFocusedCard()
+            }
+            return .handled
+
+        // Escape - clear focus/selection
+        case .escape:
+            if isSelectionMode {
+                exitSelectionMode()
+            } else {
+                focusedCardTitle = nil
+            }
+            return .handled
+
+        // Tab - move between columns
+        case .tab:
+            if press.modifiers.contains(.shift) {
+                navigateLeft()
+            } else {
+                navigateRight()
+            }
+            return .handled
+
+        // Space - toggle selection
+        case .space:
+            if let title = focusedCardTitle {
+                if selectedCardTitles.contains(title) {
+                    selectedCardTitles.remove(title)
+                } else {
+                    if !isSelectionMode {
+                        isSelectionMode = true
+                    }
+                    selectedCardTitles.insert(title)
+                }
+            }
+            return .handled
+
+        default:
+            // Check for Cmd+number (move to column)
+            if hasCmd {
+                if let number = numberFromKey(press.key), number >= 1 && number <= store.board.columns.count {
+                    moveCardToColumn(index: number - 1)
+                    return .handled
+                }
+                // Cmd+N: new card
+                if press.characters == "n" {
+                    if let title = focusedCardTitle,
+                       let card = store.card(withTitle: title) {
+                        addingCardToColumn = card.column
+                    } else if let firstColumn = store.board.columns.first {
+                        addingCardToColumn = firstColumn.id
+                    }
+                    return .handled
+                }
+            }
+            return .ignored
+        }
+    }
+
+    /// Extracts a number (1-9) from a key press
+    private func numberFromKey(_ key: KeyEquivalent) -> Int? {
+        switch key {
+        case KeyEquivalent("1"): return 1
+        case KeyEquivalent("2"): return 2
+        case KeyEquivalent("3"): return 3
+        case KeyEquivalent("4"): return 4
+        case KeyEquivalent("5"): return 5
+        case KeyEquivalent("6"): return 6
+        case KeyEquivalent("7"): return 7
+        case KeyEquivalent("8"): return 8
+        case KeyEquivalent("9"): return 9
+        default: return nil
+        }
+    }
+
+    /// Navigate to the previous card in the current column
+    private func navigateUp() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            // No focus - select first card
+            selectFirstCard()
+            return
+        }
+
+        let columnCards: [Card] = store.cards(forColumn: card.column)
+        guard let index = columnCards.firstIndex(where: { $0.title == title }),
+              index > 0 else {
+            return
+        }
+        focusedCardTitle = columnCards[index - 1].title
+    }
+
+    /// Navigate to the next card in the current column
+    private func navigateDown() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            // No focus - select first card
+            selectFirstCard()
+            return
+        }
+
+        let columnCards: [Card] = store.cards(forColumn: card.column)
+        guard let index = columnCards.firstIndex(where: { $0.title == title }),
+              index < columnCards.count - 1 else {
+            return
+        }
+        focusedCardTitle = columnCards[index + 1].title
+    }
+
+    /// Navigate to the same position in the previous column
+    private func navigateLeft() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            selectFirstCard()
+            return
+        }
+
+        guard let currentColIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+              currentColIndex > 0 else {
+            return
+        }
+
+        let currentColumnCards: [Card] = store.cards(forColumn: card.column)
+        let currentIndex: Int = currentColumnCards.firstIndex(where: { $0.title == title }) ?? 0
+
+        let prevColumn: Column = store.board.columns[currentColIndex - 1]
+        let prevColumnCards: [Card] = store.cards(forColumn: prevColumn.id)
+
+        guard !prevColumnCards.isEmpty else { return }
+
+        let targetIndex: Int = min(currentIndex, prevColumnCards.count - 1)
+        focusedCardTitle = prevColumnCards[targetIndex].title
+    }
+
+    /// Navigate to the same position in the next column
+    private func navigateRight() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            selectFirstCard()
+            return
+        }
+
+        guard let currentColIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+              currentColIndex < store.board.columns.count - 1 else {
+            return
+        }
+
+        let currentColumnCards: [Card] = store.cards(forColumn: card.column)
+        let currentIndex: Int = currentColumnCards.firstIndex(where: { $0.title == title }) ?? 0
+
+        let nextColumn: Column = store.board.columns[currentColIndex + 1]
+        let nextColumnCards: [Card] = store.cards(forColumn: nextColumn.id)
+
+        guard !nextColumnCards.isEmpty else { return }
+
+        let targetIndex: Int = min(currentIndex, nextColumnCards.count - 1)
+        focusedCardTitle = nextColumnCards[targetIndex].title
+    }
+
+    /// Select the first card in the first non-empty column
+    private func selectFirstCard() {
+        for column in store.board.columns {
+            let cards: [Card] = store.cards(forColumn: column.id)
+            if let first = cards.first {
+                focusedCardTitle = first.title
+                return
+            }
+        }
+    }
+
+    /// Delete the focused card (shows confirmation)
+    private func deleteFocusedCard() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            return
+        }
+        cardToDelete = card
+        showDeleteConfirmation = true
+    }
+
+    /// Archive the focused card
+    private func archiveFocusedCard() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title) else {
+            return
+        }
+        try? store.archiveCard(card)
+        focusedCardTitle = nil
+    }
+
+    /// Move the focused card to a specific column
+    private func moveCardToColumn(index: Int) {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title),
+              index >= 0 && index < store.board.columns.count else {
+            return
+        }
+        let targetColumn: Column = store.board.columns[index]
+        if card.column != targetColumn.id {
+            try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
+        }
+    }
+
+    /// Move the focused card to the previous column
+    private func moveCardToPreviousColumn() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title),
+              let currentIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+              currentIndex > 0 else {
+            return
+        }
+        let targetColumn: Column = store.board.columns[currentIndex - 1]
+        try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
+    }
+
+    /// Move the focused card to the next column
+    private func moveCardToNextColumn() {
+        guard let title = focusedCardTitle,
+              let card = store.card(withTitle: title),
+              let currentIndex = store.board.columns.firstIndex(where: { $0.id == card.column }),
+              currentIndex < store.board.columns.count - 1 else {
+            return
+        }
+        let targetColumn: Column = store.board.columns[currentIndex + 1]
+        try? store.moveCard(card, toColumn: targetColumn.id, atIndex: nil)
     }
 
     // MARK: - Selection Helpers
@@ -464,17 +828,24 @@ struct IOSColumnView: View {
     let column: Column
     let cards: [Card]
     let columnWidth: CGFloat
+
+    /// Whether the column is collapsed (showing only header)
+    let isCollapsed: Bool
+
+    /// Callback to toggle collapse state
+    let onToggleCollapse: () -> Void
+
     @Binding var selectedTitles: Set<String>
 
     /// Whether selection mode is active (shows checkmarks, disables drag)
     let isSelectionMode: Bool
 
+    /// Title of card currently being dragged (shared from parent for cross-column drag)
+    @Binding var draggingCardTitle: String?
+
     let onCardTap: (Card) -> Void
     let onAddCard: () -> Void
     let store: BoardStore
-
-    /// Currently dragging card title (for visual feedback)
-    @State private var draggingCard: String? = nil
 
     /// Whether the column itself is targeted for a drop
     @State private var isColumnTargeted: Bool = false
@@ -483,16 +854,33 @@ struct IOSColumnView: View {
     /// Cards visually rearrange to show a gap at this index
     @State private var dropTargetIndex: Int? = nil
 
-    /// Tracks card frame positions for calculating drop index from touch position
-    @State private var cardFrames: [Int: CGRect] = [:]
-
     /// Height of the gap to show when dragging (matches approximate card height)
     private let dropGapHeight: CGFloat = 70
 
+    /// Deduplicates cards by title to prevent ForEach crashes from duplicate IDs.
+    /// This is a defensive measure - titles should be unique, but during drag operations
+    /// or data corruption, duplicates may temporarily exist.
+    private var uniqueCards: [Card] {
+        var seen: Set<String> = []
+        return cards.filter { card in
+            if seen.contains(card.title) {
+                return false
+            }
+            seen.insert(card.title)
+            return true
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // Column header
+            // Column header - tappable to collapse/expand
             HStack {
+                // Collapse/expand chevron
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 16)
+
                 Text(column.name)
                     .font(.headline)
 
@@ -505,7 +893,7 @@ struct IOSColumnView: View {
                     .padding(.vertical, 4)
                     .background(.quaternary, in: Capsule())
 
-                if !isSelectionMode {
+                if !isSelectionMode && !isCollapsed {
                     Button(action: onAddCard) {
                         Image(systemName: "plus")
                     }
@@ -515,12 +903,18 @@ struct IOSColumnView: View {
             }
             .padding()
             .background(.regularMaterial)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onToggleCollapse()
+            }
 
-            // Cards list - cards visually shift to show insertion gap during drag
-            ScrollView(.vertical, showsIndicators: true) {
+            // Cards list - only shown when not collapsed
+            if !isCollapsed {
+                // Cards visually shift to show insertion gap during drag
+                ScrollView(.vertical, showsIndicators: true) {
                 VStack(spacing: 8) {
                     // Empty state when no cards in column
-                    if cards.isEmpty {
+                    if uniqueCards.isEmpty {
                         VStack(spacing: 8) {
                             Image(systemName: "plus.rectangle.on.rectangle")
                                 .font(.system(size: 24))
@@ -533,7 +927,7 @@ struct IOSColumnView: View {
                         .padding(.vertical, 24)
                     }
 
-                    ForEach(Array(cards.enumerated()), id: \.element.title) { index, card in
+                    ForEach(Array(uniqueCards.enumerated()), id: \.element.title) { index, card in
                         // Add gap before this card if dropping here
                         if dropTargetIndex == index {
                             Color.clear
@@ -542,83 +936,22 @@ struct IOSColumnView: View {
                         }
 
                         // Hide the card if it's currently being dragged
-                        if draggingCard != card.title {
-                            IOSCardView(
+                        if draggingCardTitle != card.title {
+                            IOSDraggableCardRow(
                                 card: card,
+                                columnWidth: columnWidth,
                                 isSelected: selectedTitles.contains(card.title),
+                                isSelectionMode: isSelectionMode,
                                 labels: store.board.labels,
-                                isDragging: false,
-                                isSelectionMode: isSelectionMode
-                            )
-                            .onTapGesture {
-                                onCardTap(card)
-                            }
-                            // Only enable drag when not in selection mode
-                            .if(!isSelectionMode) { view in
-                                view.onDrag {
-                                    draggingCard = card.title
-                                    return NSItemProvider(object: card.title as NSString)
-                                }
-                            }
-                            // Only show context menu when not in selection mode
-                            .if(!isSelectionMode) { view in
-                                view.contextMenu {
-                                    Button {
-                                        onCardTap(card)
-                                    } label: {
-                                        Label("Edit", systemImage: "pencil")
-                                    }
-
-                                    Button {
-                                        try? store.duplicateCard(card)
-                                    } label: {
-                                        Label("Duplicate", systemImage: "doc.on.doc")
-                                    }
-
-                                    // Move to column submenu
-                                    Menu {
-                                        ForEach(store.board.columns, id: \.id) { col in
-                                            if col.id != column.id {
-                                                Button {
-                                                    try? store.moveCard(card, toColumn: col.id)
-                                                } label: {
-                                                    Text(col.name)
-                                                }
-                                            }
-                                        }
-                                    } label: {
-                                        Label("Move to...", systemImage: "arrow.right.square")
-                                    }
-
-                                    Divider()
-
-                                    Button {
-                                        try? store.archiveCard(card)
-                                    } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-
-                                    Button(role: .destructive) {
-                                        try? store.deleteCard(card)
-                                    } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                            }
-                            .background(
-                                GeometryReader { geo in
-                                    Color.clear.preference(
-                                        key: IOSCardFramePreferenceKey.self,
-                                        value: [index: geo.frame(in: .named("iosColumnScroll"))]
-                                    )
-                                }
+                                draggingCardTitle: $draggingCardTitle,
+                                onTap: { onCardTap(card) }
                             )
                             .padding(.horizontal, 12)
                         }
                     }
 
                     // Add gap at the end if dropping at last position
-                    if dropTargetIndex == cards.count {
+                    if dropTargetIndex == uniqueCards.count {
                         Color.clear
                             .frame(height: dropGapHeight)
                             .transition(.opacity.combined(with: .scale(scale: 0.8)))
@@ -627,26 +960,19 @@ struct IOSColumnView: View {
                 .padding(.vertical, 8)
                 .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
             }
-            .coordinateSpace(name: "iosColumnScroll")
-            .onPreferenceChange(IOSCardFramePreferenceKey.self) { frames in
-                // Use transaction without animation to prevent "multiple updates per frame" warning
-                // The frames update frequently during drag, but we don't want to animate the state change
-                withTransaction(Transaction(animation: nil)) {
-                    cardFrames = frames
-                }
-            }
             // Custom drop delegate for continuous location tracking during drag
+            // Uses estimated card heights to avoid preference key crashes
             .onDrop(of: [.text], delegate: IOSColumnDropDelegate(
                 columnID: column.id,
                 cards: cards,
-                cardFrames: $cardFrames,
                 dropTargetIndex: $dropTargetIndex,
                 isColumnTargeted: $isColumnTargeted,
-                draggingCardTitle: $draggingCard,
+                draggingCardTitle: $draggingCardTitle,
                 store: store
             ))
+            } // End of if !isCollapsed
         }
-        .frame(width: columnWidth)
+        .frame(width: isCollapsed ? 60 : columnWidth)
         .background(Color(.systemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -664,6 +990,7 @@ struct IOSColumnView: View {
 /// Displays in order matching macOS: title, body snippet, then labels.
 /// Body preview skips markdown headers (lines starting with #).
 /// In selection mode, shows a checkmark circle on the left.
+/// Has a drag handle on the right for reordering (prevents scroll conflicts).
 struct IOSCardView: View {
     let card: Card
     let isSelected: Bool
@@ -673,8 +1000,11 @@ struct IOSCardView: View {
     /// Whether selection mode is active (shows checkmark)
     var isSelectionMode: Bool = false
 
+    /// Whether to show the drag handle (hidden in previews/drag states)
+    var showDragHandle: Bool = true
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 8) {
             // Selection checkmark (shown in selection mode)
             if isSelectionMode {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
@@ -682,6 +1012,7 @@ struct IOSCardView: View {
                     .foregroundStyle(isSelected ? Color.accentColor : .secondary)
             }
 
+            // Card content
             VStack(alignment: .leading, spacing: 6) {
                 // 1. Title
                 Text(card.title)
@@ -721,6 +1052,17 @@ struct IOSCardView: View {
                     }
                 }
             }
+
+            Spacer(minLength: 4)
+
+            // Drag handle - visible indicator for drag area
+            // This separates drag from scroll gestures
+            if showDragHandle && !isSelectionMode {
+                Image(systemName: "line.3.horizontal")
+                    .font(.body)
+                    .foregroundStyle(.tertiary)
+                    .frame(width: 24)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
@@ -732,6 +1074,66 @@ struct IOSCardView: View {
                 .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
         )
         .opacity(isDragging ? 0.5 : 1.0)
+    }
+}
+
+// MARK: - Draggable Card Row
+
+/// A card row that supports tap (edit) and drag (reorder/move).
+///
+/// The drag handle (three lines) on the right is a visual indicator for drag.
+/// In selection mode, drag is disabled and taps toggle selection.
+struct IOSDraggableCardRow: View {
+    let card: Card
+    let columnWidth: CGFloat
+    let isSelected: Bool
+    let isSelectionMode: Bool
+    let labels: [CardLabel]
+
+    @Binding var draggingCardTitle: String?
+
+    let onTap: () -> Void
+
+    var body: some View {
+        // Card content (tappable, draggable)
+        // Context menu removed - use selection mode + toolbar actions instead
+        // This makes drag gestures unambiguous on touch devices
+        IOSCardView(
+            card: card,
+            isSelected: isSelected,
+            labels: labels,
+            isDragging: false,
+            isSelectionMode: isSelectionMode,
+            showDragHandle: !isSelectionMode
+        )
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap()
+        }
+        // Drag on entire card - iOS differentiates based on movement
+        // The drag handle is just a visual indicator
+        .if(!isSelectionMode) { view in
+            view.onDrag {
+                // Use async to avoid modifying state during view update
+                // This prevents AttributeGraph crashes
+                let title = card.title
+                DispatchQueue.main.async {
+                    draggingCardTitle = title
+                }
+                return NSItemProvider(object: card.title as NSString)
+            } preview: {
+                IOSCardView(
+                    card: card,
+                    isSelected: false,
+                    labels: labels,
+                    isDragging: true,
+                    isSelectionMode: false,
+                    showDragHandle: false
+                )
+                .frame(width: columnWidth - 24)
+                .opacity(0.8)
+            }
+        }
     }
 }
 
@@ -796,58 +1198,94 @@ struct IOSLabelFilterPopover: View {
     }
 }
 
-/// Archive button that accepts dropped cards.
+// MARK: - Archive Column View
+
+/// A read-only column displaying archived cards.
 ///
-/// Highlights orange when a card is dragged over it.
-/// Dropping a card archives it immediately.
-struct IOSArchiveToolbarButton: View {
-    let store: BoardStore
-    @State private var isTargeted: Bool = false
+/// Visually distinct from regular columns with a muted background.
+/// Cards cannot be reordered or moved from this view.
+/// Tapping a card opens it for viewing (read-only).
+struct IOSArchiveColumnView: View {
+    let cards: [Card]
+    let columnWidth: CGFloat
+    let labels: [CardLabel]
+    let onCardTap: (Card) -> Void
+
+    /// Deduplicates cards by title to prevent ForEach crashes from duplicate IDs.
+    private var uniqueCards: [Card] {
+        var seen: Set<String> = []
+        return cards.filter { card in
+            if seen.contains(card.title) {
+                return false
+            }
+            seen.insert(card.title)
+            return true
+        }
+    }
 
     var body: some View {
-        Image(systemName: "archivebox")
-            .foregroundStyle(isTargeted ? .orange : .primary)
-            .padding(8)
-            .background(isTargeted ? Color.orange.opacity(0.2) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .dropDestination(for: String.self) { items, _ in
-                for title in items {
-                    if let card = store.card(withTitle: title) {
-                        try? store.archiveCard(card)
+        VStack(alignment: .leading, spacing: 0) {
+            // Column header with distinct styling
+            HStack {
+                Image(systemName: "archivebox.fill")
+                    .foregroundStyle(.secondary)
+                Text("Archive")
+                    .font(.headline)
+
+                Spacer()
+
+                Text("\(cards.count)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(.quaternary, in: Capsule())
+            }
+            .padding()
+            .background(Color.secondary.opacity(0.15))
+
+            // Archived cards list (read-only, no drag)
+            ScrollView(.vertical, showsIndicators: true) {
+                VStack(spacing: 8) {
+                    if uniqueCards.isEmpty {
+                        VStack(spacing: 8) {
+                            Image(systemName: "archivebox")
+                                .font(.system(size: 24))
+                                .foregroundStyle(.tertiary)
+                            Text("No archived cards")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 24)
+                    }
+
+                    ForEach(uniqueCards, id: \.title) { card in
+                        IOSCardView(
+                            card: card,
+                            isSelected: false,
+                            labels: labels,
+                            isDragging: false,
+                            isSelectionMode: false,
+                            showDragHandle: false
+                        )
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            onCardTap(card)
+                        }
+                        .padding(.horizontal, 12)
                     }
                 }
-                return true
-            } isTargeted: { targeted in
-                isTargeted = targeted
+                .padding(.vertical, 8)
             }
-    }
-}
-
-/// Delete button that accepts dropped cards.
-///
-/// Highlights red when a card is dragged over it.
-/// Dropping a card shows a confirmation dialog before deleting.
-struct IOSDeleteToolbarButton: View {
-    let store: BoardStore
-    @Binding var showConfirmation: Bool
-    @Binding var cardToDelete: String?
-    @State private var isTargeted: Bool = false
-
-    var body: some View {
-        Image(systemName: "trash")
-            .foregroundStyle(isTargeted ? .red : .primary)
-            .padding(8)
-            .background(isTargeted ? Color.red.opacity(0.2) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .dropDestination(for: String.self) { items, _ in
-                if let first = items.first {
-                    cardToDelete = first
-                    showConfirmation = true
-                }
-                return true
-            } isTargeted: { targeted in
-                isTargeted = targeted
-            }
+        }
+        .frame(width: columnWidth)
+        .background(Color.secondary.opacity(0.08))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.2), lineWidth: 1)
+        )
     }
 }
 
@@ -992,6 +1430,36 @@ struct IOSBoardSettingsView: View {
                     Text("Labels")
                 } footer: {
                     Text("Labels help categorize cards. Tap to edit name or color.")
+                }
+
+                // MARK: Card Template Section
+                Section {
+                    NavigationLink {
+                        IOSCardTemplateEditor(
+                            template: store.board.cardTemplate,
+                            onSave: { newTemplate in
+                                try? store.updateCardTemplate(newTemplate)
+                            }
+                        )
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Card Template")
+                            if store.board.cardTemplate.isEmpty {
+                                Text("No template (cards start empty)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                Text(store.board.cardTemplate.prefix(50) + (store.board.cardTemplate.count > 50 ? "..." : ""))
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(2)
+                            }
+                        }
+                    }
+                } header: {
+                    Text("New Card Template")
+                } footer: {
+                    Text("Default content for new cards. Supports markdown.")
                 }
 
                 // MARK: Statistics Section
@@ -1142,6 +1610,47 @@ struct IOSBoardSettingsView: View {
         try? store.removeColumn(column.id)
         columns.removeAll { $0.id == column.id }
         columnToDelete = nil
+    }
+}
+
+// MARK: - Card Template Editor
+
+/// Editor view for the card template.
+///
+/// Provides a full-screen text editor for editing the markdown template
+/// that's used as default content for new cards.
+struct IOSCardTemplateEditor: View {
+    let template: String
+    let onSave: (String) -> Void
+
+    @State private var editedTemplate: String = ""
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Text editor for template
+            TextEditor(text: $editedTemplate)
+                .font(.system(.body, design: .monospaced))
+                .padding()
+        }
+        .navigationTitle("Card Template")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) {
+                Button("Save") {
+                    onSave(editedTemplate)
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .cancellationAction) {
+                Button("Cancel") {
+                    dismiss()
+                }
+            }
+        }
+        .onAppear {
+            editedTemplate = template
+        }
     }
 }
 
@@ -2164,36 +2673,29 @@ extension String: @retroactive Identifiable {
     public var id: String { self }
 }
 
-// MARK: - Card Frame Preference Key
-
-/// Preference key to track card frame positions for drop index calculation.
-/// Collects frames from all cards in a column for hit testing during drag.
-struct IOSCardFramePreferenceKey: PreferenceKey {
-    // nonisolated(unsafe) required for Swift 6 - PreferenceKey pattern requires mutable default
-    nonisolated(unsafe) static var defaultValue: [Int: CGRect] = [:]
-
-    static func reduce(value: inout [Int: CGRect], nextValue: () -> [Int: CGRect]) {
-        value.merge(nextValue()) { _, new in new }
-    }
-}
-
 // MARK: - Drag & Drop Delegate
 
 /// Custom drop delegate that tracks touch position during drag operations.
-/// Updates the drop target index based on touch Y position relative to card centers,
-/// allowing cards to visually rearrange and show the insertion gap.
+/// Uses estimated card heights to calculate drop position (avoids preference key crashes).
+/// Allows cards to visually rearrange and show the insertion gap.
 struct IOSColumnDropDelegate: DropDelegate {
     let columnID: String
     let cards: [Card]
-    @Binding var cardFrames: [Int: CGRect]
     @Binding var dropTargetIndex: Int?
     @Binding var isColumnTargeted: Bool
     @Binding var draggingCardTitle: String?
     let store: BoardStore
 
+    /// Estimated height of a card including spacing
+    /// This avoids the need for preference key tracking which can cause crashes
+    private let estimatedCardHeight: CGFloat = 85
+
     /// Called when the drag enters the drop area
     func dropEntered(info: DropInfo) {
-        isColumnTargeted = true
+        // Use async to avoid modifying state during view update
+        DispatchQueue.main.async {
+            isColumnTargeted = true
+        }
         updateDropIndex(for: info.location)
     }
 
@@ -2205,67 +2707,93 @@ struct IOSColumnDropDelegate: DropDelegate {
 
     /// Called when the drag exits the drop area
     func dropExited(info: DropInfo) {
-        isColumnTargeted = false
-        dropTargetIndex = nil
+        // Use async to avoid modifying state during view update
+        DispatchQueue.main.async {
+            isColumnTargeted = false
+            dropTargetIndex = nil
+        }
         // Note: Don't clear draggingCardTitle here - user might be dragging to another column
     }
 
     /// Called when the user drops the item
     func performDrop(info: DropInfo) -> Bool {
-        guard let draggedTitle = draggingCardTitle else {
-            resetState()
-            return false
+        // Capture values before async
+        let draggedTitle = draggingCardTitle
+        let targetIdx = dropTargetIndex ?? cards.count
+
+        // Reset state immediately via async
+        DispatchQueue.main.async {
+            isColumnTargeted = false
+            dropTargetIndex = nil
+            draggingCardTitle = nil
         }
-        guard let draggedCard = store.card(withTitle: draggedTitle) else {
-            resetState()
+
+        // Validate dragged card
+        guard let title = draggedTitle else {
+            print("performDrop: No draggingCardTitle set")
             return false
         }
 
-        let targetIndex: Int = dropTargetIndex ?? cards.count
+        guard let draggedCard = store.card(withTitle: title) else {
+            print("performDrop: Card not found for title: \(title)")
+            return false
+        }
 
+        // Perform the move
         do {
-            try store.moveCard(draggedCard, toColumn: columnID, atIndex: targetIndex)
-            resetState()
+            try store.moveCard(draggedCard, toColumn: columnID, atIndex: targetIdx)
             return true
         } catch {
-            print("Drop failed: \(error)")
-            resetState()
+            print("performDrop failed: \(error)")
             return false
         }
-    }
-
-    /// Resets all drag state after drop completes or fails
-    private func resetState() {
-        isColumnTargeted = false
-        dropTargetIndex = nil
-        draggingCardTitle = nil
     }
 
     /// Calculates which index to insert at based on touch Y position.
-    /// Compares touch position to card center points to find the insertion slot.
+    /// Uses estimated card heights for stable calculation without preference keys.
     private func updateDropIndex(for location: CGPoint) {
         let y: CGFloat = location.y
 
         // If no cards, insert at beginning
         if cards.isEmpty {
-            dropTargetIndex = 0
+            let newIndex = 0
+            if dropTargetIndex != newIndex {
+                DispatchQueue.main.async {
+                    dropTargetIndex = newIndex
+                }
+            }
             return
         }
 
-        // Check each card's frame to find where touch falls
-        // Insert before a card if touch is above that card's center
+        // Use estimated positions based on card height
+        // This avoids preference key tracking which can cause AttributeGraph crashes
+        // Top padding of scroll content is ~8pt, cards have ~8pt spacing
+        let topPadding: CGFloat = 8
+        let cardSpacing: CGFloat = 8
+
         for index in 0..<cards.count {
-            if let frame = cardFrames[index] {
-                let cardCenter: CGFloat = frame.midY
-                if y < cardCenter {
-                    dropTargetIndex = index
-                    return
+            // Estimated Y position of card center
+            let cardTop: CGFloat = topPadding + CGFloat(index) * (estimatedCardHeight + cardSpacing)
+            let cardCenter: CGFloat = cardTop + estimatedCardHeight / 2
+
+            if y < cardCenter {
+                let newIndex = index
+                if dropTargetIndex != newIndex {
+                    DispatchQueue.main.async {
+                        dropTargetIndex = newIndex
+                    }
                 }
+                return
             }
         }
 
         // Below all cards - insert at end
-        dropTargetIndex = cards.count
+        let newIndex = cards.count
+        if dropTargetIndex != newIndex {
+            DispatchQueue.main.async {
+                dropTargetIndex = newIndex
+            }
+        }
     }
 }
 

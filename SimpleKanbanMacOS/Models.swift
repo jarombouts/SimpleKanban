@@ -35,6 +35,13 @@ public struct Card: Equatable, Sendable {
     public var labels: [String]
     public var body: String
 
+    /// The original filename slug when loaded from disk.
+    ///
+    /// This preserves the source filename for cards that were created externally
+    /// with a non-standard slug. When saving, we use this slug if the title hasn't
+    /// changed, ensuring we update the original file rather than creating a new one.
+    public var sourceSlug: String?
+
     public init(
         title: String,
         column: String,
@@ -42,7 +49,8 @@ public struct Card: Equatable, Sendable {
         created: Date = Date(),
         modified: Date = Date(),
         labels: [String] = [],
-        body: String = ""
+        body: String = "",
+        sourceSlug: String? = nil
     ) {
         self.title = title
         self.column = column
@@ -51,6 +59,7 @@ public struct Card: Equatable, Sendable {
         self.modified = modified
         self.labels = labels
         self.body = body
+        self.sourceSlug = sourceSlug
     }
 }
 

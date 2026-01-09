@@ -6,6 +6,22 @@
 
 import SwiftUI
 
+// MARK: - Focused Values
+
+/// Focused value key for showing board settings from the menu bar.
+/// This allows the Cmd+, keyboard shortcut to trigger the settings sheet
+/// in whatever BoardView is currently focused.
+struct ShowSettingsKey: FocusedValueKey {
+    typealias Value = () -> Void
+}
+
+extension FocusedValues {
+    var showSettings: (() -> Void)? {
+        get { self[ShowSettingsKey.self] }
+        set { self[ShowSettingsKey.self] = newValue }
+    }
+}
+
 // MARK: - App Delegate
 
 /// App delegate to handle macOS-specific app lifecycle events.
@@ -292,7 +308,11 @@ struct SimpleKanbanApp: App {
     @State private var errorMessage: String? = nil
     @State private var hasAttemptedAutoLoad: Bool = false
     @State private var showPushConfirmation: Bool = false
+    @State private var showHelp: Bool = false
     @StateObject private var recentBoardsManager: RecentBoardsManager = RecentBoardsManager.shared
+
+    /// Focused value for showing settings - set by BoardView when it has focus
+    @FocusedValue(\.showSettings) var showSettings
 
     // MARK: - Git Menu Computed Properties
 
@@ -392,6 +412,9 @@ struct SimpleKanbanApp: App {
             } message: {
                 Text("Push local commits to origin?")
             }
+            .sheet(isPresented: $showHelp) {
+                HelpView(onDismiss: { showHelp = false })
+            }
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -412,6 +435,16 @@ struct SimpleKanbanApp: App {
                 }
                 .keyboardShortcut("w")
                 .disabled(store == nil)
+            }
+
+            // Settings menu item (Cmd+,)
+            // Uses FocusedValue to communicate with BoardView which owns the settings sheet
+            CommandGroup(replacing: .appSettings) {
+                Button("Settings...") {
+                    showSettings?()
+                }
+                .keyboardShortcut(",", modifiers: .command)
+                .disabled(showSettings == nil)
             }
 
             // Git menu for sync operations
@@ -435,6 +468,14 @@ struct SimpleKanbanApp: App {
                 // Status display (read-only)
                 Text(gitStatusText)
                     .foregroundStyle(.secondary)
+            }
+
+            // Help menu
+            CommandGroup(replacing: .help) {
+                Button("SimpleKanban Help") {
+                    showHelp = true
+                }
+                .keyboardShortcut("?", modifiers: .command)
             }
         }
     }
@@ -830,5 +871,126 @@ struct RecentBoardRow: View {
 
         let index: Int = abs(hash) % colors.count
         return colors[index]
+    }
+}
+
+// MARK: - HelpView
+
+/// Help sheet showing keyboard shortcuts and usage information.
+///
+/// Accessible from the Help menu (Cmd+?).
+struct HelpView: View {
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            HStack {
+                Text("SimpleKanban Help")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                Spacer()
+                Button("Done") {
+                    onDismiss()
+                }
+                .keyboardShortcut(.escape, modifiers: [])
+            }
+            .padding()
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Keyboard Shortcuts
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Keyboard Shortcuts")
+                            .font(.headline)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            shortcutRow("↑ ↓ ← →", "Navigate between cards")
+                            shortcutRow("Enter", "Edit selected card")
+                            shortcutRow("N", "Create new card in selected column")
+                            shortcutRow("⌫ Delete", "Delete selected card")
+                            shortcutRow("⌘ ⌫", "Archive selected card")
+                            shortcutRow("⌘ 1-9", "Move card to column 1-9")
+                            shortcutRow("Space", "Toggle card selection (multi-select)")
+                            shortcutRow("⌘ A", "Select all cards")
+                            shortcutRow("Escape", "Clear selection / Close sheet")
+                        }
+                    }
+
+                    Divider()
+
+                    // File Menu
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("File Menu")
+                            .font(.headline)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            shortcutRow("⌘ O", "Open board")
+                            shortcutRow("⌘ N", "Create new board")
+                            shortcutRow("⌘ W", "Close board")
+                            shortcutRow("⌘ ,", "Open settings")
+                        }
+                    }
+
+                    Divider()
+
+                    // Git Menu
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Git Sync")
+                            .font(.headline)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            shortcutRow("⇧ ⌘ R", "Sync with remote")
+                            shortcutRow("⇧ ⌘ P", "Push to remote")
+                        }
+
+                        Text("SimpleKanban auto-syncs every 60 seconds when your board is in a git repository with a remote configured.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Divider()
+
+                    // About file format
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("File Format")
+                            .font(.headline)
+
+                        Text("Boards are stored as markdown files in a folder you choose:")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("• board.md — Board metadata, columns, and labels")
+                            Text("• cards/{column}/*.md — Individual cards")
+                            Text("• archive/*.md — Archived cards")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                        Text("This makes boards git-friendly and editable with any text editor.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding()
+            }
+        }
+        .frame(width: 450, height: 500)
+    }
+
+    /// A single row in the shortcuts list
+    private func shortcutRow(_ shortcut: String, _ description: String) -> some View {
+        HStack {
+            Text(shortcut)
+                .font(.system(.body, design: .monospaced))
+                .foregroundStyle(.primary)
+                .frame(width: 100, alignment: .leading)
+            Text(description)
+                .foregroundStyle(.secondary)
+            Spacer()
+        }
     }
 }

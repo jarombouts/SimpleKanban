@@ -120,6 +120,50 @@ public enum BoardLoader {
 
         return LoadedBoard(board: board, cards: cards, url: url)
     }
+
+    /// Loads archived cards from the archive/ directory.
+    ///
+    /// Archived cards have filenames like "2024-01-05-card-slug.md".
+    /// They are sorted by date (newest first) based on the filename prefix.
+    ///
+    /// - Parameter url: The board directory URL
+    /// - Returns: Array of archived cards, newest first
+    public static func loadArchivedCards(from url: URL) throws -> [Card] {
+        let fileManager: FileManager = FileManager.default
+        let archiveDir: URL = url.appendingPathComponent("archive")
+
+        guard fileManager.fileExists(atPath: archiveDir.path) else {
+            return []
+        }
+
+        let cardFiles: [URL] = try fileManager.contentsOfDirectory(
+            at: archiveDir,
+            includingPropertiesForKeys: nil
+        ).filter { $0.pathExtension == "md" }
+        .sorted { $0.lastPathComponent > $1.lastPathComponent } // Newest first (date prefix sorts correctly)
+
+        var cards: [Card] = []
+        for cardURL in cardFiles {
+            do {
+                let cardContent: String = try String(contentsOf: cardURL, encoding: .utf8)
+                var card: Card = try Card.parse(from: cardContent)
+
+                // Capture the filename for reference (includes date prefix)
+                let filename: String = cardURL.deletingPathExtension().lastPathComponent
+                card.sourceSlug = filename
+
+                // Override column to "archive" for display purposes
+                // (the card still stores its original column in the frontmatter)
+                card.column = "archive"
+
+                cards.append(card)
+            } catch {
+                print("Warning: Skipping malformed archive file \(cardURL.lastPathComponent): \(error)")
+            }
+        }
+
+        return cards
+    }
 }
 
 // MARK: - CardWriter
