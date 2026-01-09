@@ -13,7 +13,17 @@ import Foundation
 
 /// A single Kanban card, stored as a markdown file with YAML frontmatter.
 ///
-/// File format:
+/// ## Identity Model
+///
+/// Cards are identified by their `slug`, which is the filename (without extension).
+/// The slug is immutable after creation - renaming a card's title does NOT rename
+/// the file. This design ensures:
+/// - Stable identity even when titles change
+/// - External tools can create cards with any filename
+/// - Git history is preserved (no file renames on title edits)
+/// - No ambiguity about which file to update
+///
+/// ## File format:
 /// ```
 /// ---
 /// title: Card title
@@ -26,7 +36,17 @@ import Foundation
 ///
 /// Markdown body content here.
 /// ```
-public struct Card: Equatable, Sendable {
+public struct Card: Equatable, Sendable, Identifiable {
+    /// Cards are identified by their slug (filename), not their title.
+    /// This ensures stable identity even when titles are edited.
+    public var id: String { slug }
+
+    /// The filename slug - immutable after creation.
+    /// This IS the filename (without .md extension) and IS the card's identity.
+    /// For new cards, this is computed from the initial title via slugify().
+    /// For existing cards, this is the actual filename on disk.
+    public let slug: String
+
     public var title: String
     public var column: String
     public var position: String
@@ -35,23 +55,17 @@ public struct Card: Equatable, Sendable {
     public var labels: [String]
     public var body: String
 
-    /// The original filename slug when loaded from disk.
-    ///
-    /// This preserves the source filename for cards that were created externally
-    /// with a non-standard slug. When saving, we use this slug if the title hasn't
-    /// changed, ensuring we update the original file rather than creating a new one.
-    public var sourceSlug: String?
-
     public init(
+        slug: String,
         title: String,
         column: String,
         position: String,
         created: Date = Date(),
         modified: Date = Date(),
         labels: [String] = [],
-        body: String = "",
-        sourceSlug: String? = nil
+        body: String = ""
     ) {
+        self.slug = slug
         self.title = title
         self.column = column
         self.position = position
@@ -59,7 +73,29 @@ public struct Card: Equatable, Sendable {
         self.modified = modified
         self.labels = labels
         self.body = body
-        self.sourceSlug = sourceSlug
+    }
+
+    /// Creates a new card with an auto-generated slug from the title.
+    /// Use this for creating NEW cards where the slug should be derived from title.
+    public static func create(
+        title: String,
+        column: String,
+        position: String,
+        created: Date = Date(),
+        modified: Date = Date(),
+        labels: [String] = [],
+        body: String = ""
+    ) -> Card {
+        return Card(
+            slug: slugify(title),
+            title: title,
+            column: column,
+            position: position,
+            created: created,
+            modified: modified,
+            labels: labels,
+            body: body
+        )
     }
 }
 
@@ -75,10 +111,12 @@ public enum CardParseError: Error, Equatable {
 extension Card {
     /// Parses a Card from markdown with YAML frontmatter.
     ///
-    /// - Parameter markdown: The full markdown content including frontmatter
+    /// - Parameters:
+    ///   - markdown: The full markdown content including frontmatter
+    ///   - slug: The filename slug (without .md extension) - this becomes the card's identity
     /// - Returns: A parsed Card instance
     /// - Throws: CardParseError if parsing fails
-    public static func parse(from markdown: String) throws -> Card {
+    public static func parse(from markdown: String, slug: String) throws -> Card {
         // Frontmatter is delimited by --- at start and end
         // Format: ---\nkey: value\n---\n\nbody content
         let lines: [String] = markdown.components(separatedBy: "\n")
@@ -148,6 +186,7 @@ extension Card {
         let body: String = bodyLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,

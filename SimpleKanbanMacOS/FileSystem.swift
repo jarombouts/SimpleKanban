@@ -100,10 +100,9 @@ public enum BoardLoader {
             for cardURL in cardFiles {
                 do {
                     let cardContent: String = try String(contentsOf: cardURL, encoding: .utf8)
-                    var card: Card = try Card.parse(from: cardContent)
-                    // Set sourceSlug from the actual filename so we can track
-                    // cards even if their filename doesn't match slugify(title)
-                    card.sourceSlug = cardURL.deletingPathExtension().lastPathComponent
+                    // Pass the filename as the slug - this is the card's identity
+                    let slug: String = cardURL.deletingPathExtension().lastPathComponent
+                    let card: Card = try Card.parse(from: cardContent, slug: slug)
                     cards.append(card)
                 } catch {
                     // Log warning but continue loading other cards
@@ -143,7 +142,9 @@ public enum BoardLoader {
         for cardURL in cardFiles {
             do {
                 let cardContent: String = try String(contentsOf: cardURL, encoding: .utf8)
-                var card: Card = try Card.parse(from: cardContent)
+                // Pass the filename as the slug (includes date prefix for archived cards)
+                let slug: String = cardURL.deletingPathExtension().lastPathComponent
+                var card: Card = try Card.parse(from: cardContent, slug: slug)
 
                 // Override column to "archive" for display purposes
                 // (the card still stores its original column in the frontmatter)
@@ -171,25 +172,26 @@ public enum CardWriterError: Error, Equatable {
 ///
 /// Design decisions:
 /// - Cards are stored in column subdirectories: cards/{column}/{slug}.md
-/// - Filenames are slugified titles (e.g., "Fix Bug" → "fix-bug.md")
+/// - Filenames are the card's slug (immutable identity)
 /// - Atomic writes prevent partial file corruption
-/// - Title changes trigger file rename (git tracks as rename)
+/// - Title changes update content, NOT filename (slug is immutable)
 /// - Column changes trigger file move between directories
-/// - Duplicate titles are rejected (filenames must be unique)
 public enum CardWriter {
 
     /// Saves a card to the cards/{column}/ directory.
     ///
+    /// The filename is always `{card.slug}.md` - slug is immutable after creation.
+    /// Title changes update the file content, not the filename.
+    /// Column changes move the file between directories.
+    ///
     /// - Parameters:
     ///   - card: The card to save
     ///   - boardURL: The board directory URL
-    ///   - previousTitle: If the title changed, provide the old title to rename the file
     ///   - previousColumn: If the column changed, provide the old column to move the file
-    ///   - isNew: Set to true when creating a new card (enables duplicate check)
+    ///   - isNew: Set to true when creating a new card (enables duplicate slug check)
     public static func save(
         _ card: Card,
         in boardURL: URL,
-        previousTitle: String? = nil,
         previousColumn: String? = nil,
         isNew: Bool = false
     ) throws {
@@ -207,17 +209,11 @@ public enum CardWriter {
             try fileManager.createDirectory(at: columnDir, withIntermediateDirectories: true)
         }
 
-        let newSlug: String = slugify(card.title)
-        let newFilename: String = "\(newSlug).md"
-        let newPath: URL = columnDir.appendingPathComponent(newFilename)
+        // Filename is always the card's slug (immutable identity)
+        let targetFilename: String = "\(card.slug).md"
+        let targetPath: URL = columnDir.appendingPathComponent(targetFilename)
 
-        // Check for duplicate title on new cards - must check ALL column directories
-        // because titles must be unique across the entire board.
-        //
-        // We compare actual parsed titles, not slugified filenames, because:
-        // - A card could be renamed but keep its old filename
-        // - A card could be created externally with a different slug
-        // - Two different slugs could theoretically have the same title
+        // Check for duplicate slug on new cards - slug must be unique across entire board
         if isNew {
             if let enumerator = fileManager.enumerator(
                 at: cardsURL,
@@ -226,12 +222,9 @@ public enum CardWriter {
             ) {
                 for case let existingURL as URL in enumerator {
                     if existingURL.pathExtension == "md" {
-                        // Parse the card file to get the actual title
-                        if let content = try? String(contentsOf: existingURL, encoding: .utf8),
-                           let existingCard = try? Card.parse(from: content) {
-                            if existingCard.title == card.title {
-                                throw CardWriterError.duplicateTitle(card.title)
-                            }
+                        let existingSlug: String = existingURL.deletingPathExtension().lastPathComponent
+                        if existingSlug == card.slug {
+                            throw CardWriterError.duplicateTitle(card.title)
                         }
                     }
                 }
@@ -241,33 +234,16 @@ public enum CardWriter {
         // Handle column change (file moves to different directory)
         if let oldColumn = previousColumn, oldColumn != card.column {
             let oldColumnDir: URL = cardsURL.appendingPathComponent(oldColumn)
-            let oldSlug: String = previousTitle.map { slugify($0) } ?? newSlug
-            let oldPath: URL = oldColumnDir.appendingPathComponent("\(oldSlug).md")
+            let oldPath: URL = oldColumnDir.appendingPathComponent(targetFilename)
 
             if fileManager.fileExists(atPath: oldPath.path) {
-                // Check if target already exists
-                if fileManager.fileExists(atPath: newPath.path) {
-                    throw CardWriterError.duplicateTitle(card.title)
-                }
-                try fileManager.removeItem(at: oldPath)
-            }
-        }
-        // Handle title rename within same column
-        else if let oldTitle = previousTitle, oldTitle != card.title {
-            let oldSlug: String = slugify(oldTitle)
-            let oldPath: URL = columnDir.appendingPathComponent("\(oldSlug).md")
-
-            if fileManager.fileExists(atPath: oldPath.path) {
-                if fileManager.fileExists(atPath: newPath.path) {
-                    throw CardWriterError.duplicateTitle(card.title)
-                }
                 try fileManager.removeItem(at: oldPath)
             }
         }
 
         // Write card to file (atomic write via temp file)
         let markdown: String = card.toMarkdown()
-        try markdown.write(to: newPath, atomically: true, encoding: .utf8)
+        try markdown.write(to: targetPath, atomically: true, encoding: .utf8)
     }
 
     /// Deletes a card file.
@@ -276,8 +252,7 @@ public enum CardWriter {
     ///   - card: The card to delete
     ///   - boardURL: The board directory URL
     public static func delete(_ card: Card, in boardURL: URL) throws {
-        let slug: String = slugify(card.title)
-        let cardPath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(slug).md")
+        let cardPath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(card.slug).md")
 
         if FileManager.default.fileExists(atPath: cardPath.path) {
             try FileManager.default.removeItem(at: cardPath)
@@ -296,9 +271,8 @@ public enum CardWriter {
     @discardableResult
     public static func archive(_ card: Card, in boardURL: URL) throws -> URL {
         let fileManager: FileManager = FileManager.default
-        let slug: String = slugify(card.title)
 
-        let sourcePath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(slug).md")
+        let sourcePath: URL = boardURL.appendingPathComponent("cards/\(card.column)/\(card.slug).md")
         let archiveDir: URL = boardURL.appendingPathComponent("archive")
 
         // Ensure archive directory exists
@@ -311,12 +285,12 @@ public enum CardWriter {
         dateFormatter.dateFormat = "yyyy-MM-dd"
         let datePrefix: String = dateFormatter.string(from: Date())
 
-        var archivePath: URL = archiveDir.appendingPathComponent("\(datePrefix)-\(slug).md")
+        var archivePath: URL = archiveDir.appendingPathComponent("\(datePrefix)-\(card.slug).md")
 
         // Handle collision: if file exists, append a counter
         var counter: Int = 2
         while fileManager.fileExists(atPath: archivePath.path) {
-            archivePath = archiveDir.appendingPathComponent("\(datePrefix)-\(slug)-\(counter).md")
+            archivePath = archiveDir.appendingPathComponent("\(datePrefix)-\(card.slug)-\(counter).md")
             counter += 1
         }
 
@@ -336,9 +310,8 @@ public enum CardWriter {
     ///   - boardURL: The board directory URL
     public static func unarchive(from archivePath: URL, card: Card, in boardURL: URL) throws {
         let fileManager: FileManager = FileManager.default
-        let slug: String = slugify(card.title)
 
-        // Destination: cards/{column}/{slug}.md
+        // Destination: cards/{column}/{card.slug}.md
         let columnDir: URL = boardURL.appendingPathComponent("cards/\(card.column)")
 
         // Ensure column directory exists
@@ -346,7 +319,7 @@ public enum CardWriter {
             try fileManager.createDirectory(at: columnDir, withIntermediateDirectories: true)
         }
 
-        let destPath: URL = columnDir.appendingPathComponent("\(slug).md")
+        let destPath: URL = columnDir.appendingPathComponent("\(card.slug).md")
 
         // Move file back from archive
         try fileManager.moveItem(at: archivePath, to: destPath)

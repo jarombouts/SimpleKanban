@@ -281,26 +281,27 @@ extension BoardStore {
                 }
 
                 // Find existing card with this slug
-                if let existingIndex = self.cards.firstIndex(where: { slugify($0.title) == filename }) {
+                let slug: String = filename
+                if let existingIndex = self.cards.firstIndex(where: { $0.slug == slug }) {
                     // Card was modified - check for conflict
                     if onConflict(self.cards[existingIndex]) {
                         // Reload from disk
                         do {
-                            try self.reloadCard(at: existingIndex, from: changedURL)
+                            try self.reloadCard(at: existingIndex, from: changedURL, slug: slug)
                         } catch {
                             // File might be temporarily invalid (mid-write), just log and skip
-                            print("FileWatcher: Error reloading card \(filename): \(error)")
+                            print("FileWatcher: Error reloading card \(slug): \(error)")
                         }
                     }
                 } else {
                     // New card file - load it
                     do {
                         let content: String = try String(contentsOf: changedURL, encoding: .utf8)
-                        let newCard: Card = try Card.parse(from: content)
+                        let newCard: Card = try Card.parse(from: content, slug: slug)
                         self.addLoadedCard(newCard)
                     } catch {
                         // File might be invalid or still being written, just log and skip
-                        print("FileWatcher: Error loading new card \(filename): \(error)")
+                        print("FileWatcher: Error loading new card \(slug): \(error)")
                     }
                 }
             }

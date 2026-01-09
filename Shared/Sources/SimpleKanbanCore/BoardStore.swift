@@ -122,7 +122,15 @@ public final class BoardStore: @unchecked Sendable {
         return cards.filter { $0.column == columnID }
     }
 
-    /// Finds a card by its title.
+    /// Finds a card by its slug (filename identity).
+    ///
+    /// - Parameter slug: The card slug to search for
+    /// - Returns: The card if found, nil otherwise
+    public func card(bySlug slug: String) -> Card? {
+        return cards.first { $0.slug == slug }
+    }
+
+    /// Finds a card by its title (for display/search purposes).
     ///
     /// - Parameter title: The card title to search for
     /// - Returns: The card if found, nil otherwise
@@ -130,12 +138,12 @@ public final class BoardStore: @unchecked Sendable {
         return cards.first { $0.title == title }
     }
 
-    /// Gets multiple cards by their titles.
+    /// Gets multiple cards by their slugs.
     ///
-    /// - Parameter titles: Set of card titles to look up
+    /// - Parameter slugs: Set of card slugs to look up
     /// - Returns: Array of found cards (order not guaranteed)
-    public func cards(withTitles titles: Set<String>) -> [Card] {
-        return cards.filter { titles.contains($0.title) }
+    public func cards(bySlugs slugs: Set<String>) -> [Card] {
+        return cards.filter { slugs.contains($0.slug) }
     }
 
     // MARK: - Filtered Card Queries
@@ -247,7 +255,7 @@ public final class BoardStore: @unchecked Sendable {
         // Apply card template if board has one
         let finalBody: String = body.isEmpty ? board.cardTemplate : body
 
-        let card: Card = Card(
+        let card: Card = Card.create(
             title: title,
             column: columnID,
             position: position,
@@ -274,7 +282,7 @@ public final class BoardStore: @unchecked Sendable {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: delete the card (silently, since it was just created)
             try? CardWriter.delete(card, in: store.url)
-            store.cards.removeAll { $0.title == card.title }
+            store.cards.removeAll { $0.slug == card.slug }
 
             // Register redo: re-add the card
             store.undoManager?.registerUndo(withTarget: store) { store in
@@ -290,42 +298,45 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Updates a card's title.
     ///
+    /// Note: With slug-based identity, renaming a card's title does NOT rename
+    /// the file. The file stays at {slug}.md, only the content changes.
+    ///
     /// - Parameters:
     ///   - card: The card to update
     ///   - title: The new title
-    /// - Throws: CardWriterError.duplicateTitle if new title already exists
     public func updateCard(_ card: Card, title: String) throws {
-        guard let index = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let index = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
+        let cardSlug: String = cards[index].slug
         let oldTitle: String = cards[index].title
         cards[index].title = title
         cards[index].modified = Date()
 
-        try CardWriter.save(cards[index], in: url, previousTitle: oldTitle)
+        try CardWriter.save(cards[index], in: url)
 
         // Register undo action: restore old title
-        registerUndoForUpdateTitle(newTitle: title, oldTitle: oldTitle)
+        registerUndoForUpdateTitle(cardSlug: cardSlug, newTitle: title, oldTitle: oldTitle)
     }
 
     /// Registers an undo action for updating a card's title.
     /// Undo will restore the old title; redo will apply the new title again.
-    private func registerUndoForUpdateTitle(newTitle: String, oldTitle: String) {
+    private func registerUndoForUpdateTitle(cardSlug: String, newTitle: String, oldTitle: String) {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: restore old title
-            guard let index = store.cards.firstIndex(where: { $0.title == newTitle }) else { return }
+            guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
             store.cards[index].title = oldTitle
             store.cards[index].modified = Date()
-            try? CardWriter.save(store.cards[index], in: store.url, previousTitle: newTitle)
+            try? CardWriter.save(store.cards[index], in: store.url)
 
             // Register redo: apply new title again
             store.undoManager?.registerUndo(withTarget: store) { store in
-                guard let index = store.cards.firstIndex(where: { $0.title == oldTitle }) else { return }
+                guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
                 store.cards[index].title = newTitle
                 store.cards[index].modified = Date()
-                try? CardWriter.save(store.cards[index], in: store.url, previousTitle: oldTitle)
-                store.registerUndoForUpdateTitle(newTitle: newTitle, oldTitle: oldTitle)
+                try? CardWriter.save(store.cards[index], in: store.url)
+                store.registerUndoForUpdateTitle(cardSlug: cardSlug, newTitle: newTitle, oldTitle: oldTitle)
             }
             store.undoManager?.setActionName("Rename Card")
         }
@@ -338,11 +349,11 @@ public final class BoardStore: @unchecked Sendable {
     ///   - card: The card to update
     ///   - body: The new body content
     public func updateCard(_ card: Card, body: String) throws {
-        guard let index = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let index = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
-        let cardTitle: String = cards[index].title
+        let cardSlug: String = cards[index].slug
         let oldBody: String = cards[index].body
         cards[index].body = body
         cards[index].modified = Date()
@@ -350,26 +361,26 @@ public final class BoardStore: @unchecked Sendable {
         try CardWriter.save(cards[index], in: url)
 
         // Register undo action: restore old body
-        registerUndoForUpdateBody(cardTitle: cardTitle, newBody: body, oldBody: oldBody)
+        registerUndoForUpdateBody(cardSlug: cardSlug, newBody: body, oldBody: oldBody)
     }
 
     /// Registers an undo action for updating a card's body.
     /// Undo will restore the old body; redo will apply the new body again.
-    private func registerUndoForUpdateBody(cardTitle: String, newBody: String, oldBody: String) {
+    private func registerUndoForUpdateBody(cardSlug: String, newBody: String, oldBody: String) {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: restore old body
-            guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+            guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
             store.cards[index].body = oldBody
             store.cards[index].modified = Date()
             try? CardWriter.save(store.cards[index], in: store.url)
 
             // Register redo: apply new body again
             store.undoManager?.registerUndo(withTarget: store) { store in
-                guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+                guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
                 store.cards[index].body = newBody
                 store.cards[index].modified = Date()
                 try? CardWriter.save(store.cards[index], in: store.url)
-                store.registerUndoForUpdateBody(cardTitle: cardTitle, newBody: newBody, oldBody: oldBody)
+                store.registerUndoForUpdateBody(cardSlug: cardSlug, newBody: newBody, oldBody: oldBody)
             }
             store.undoManager?.setActionName("Edit Card")
         }
@@ -382,11 +393,11 @@ public final class BoardStore: @unchecked Sendable {
     ///   - card: The card to update
     ///   - labels: The new labels array
     public func updateCard(_ card: Card, labels: [String]) throws {
-        guard let index = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let index = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
-        let cardTitle: String = cards[index].title
+        let cardSlug: String = cards[index].slug
         let oldLabels: [String] = cards[index].labels
         cards[index].labels = labels
         cards[index].modified = Date()
@@ -394,26 +405,26 @@ public final class BoardStore: @unchecked Sendable {
         try CardWriter.save(cards[index], in: url)
 
         // Register undo action: restore old labels
-        registerUndoForUpdateLabels(cardTitle: cardTitle, newLabels: labels, oldLabels: oldLabels)
+        registerUndoForUpdateLabels(cardSlug: cardSlug, newLabels: labels, oldLabels: oldLabels)
     }
 
     /// Registers an undo action for updating a card's labels.
     /// Undo will restore the old labels; redo will apply the new labels again.
-    private func registerUndoForUpdateLabels(cardTitle: String, newLabels: [String], oldLabels: [String]) {
+    private func registerUndoForUpdateLabels(cardSlug: String, newLabels: [String], oldLabels: [String]) {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: restore old labels
-            guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+            guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
             store.cards[index].labels = oldLabels
             store.cards[index].modified = Date()
             try? CardWriter.save(store.cards[index], in: store.url)
 
             // Register redo: apply new labels again
             store.undoManager?.registerUndo(withTarget: store) { store in
-                guard let index = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+                guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
                 store.cards[index].labels = newLabels
                 store.cards[index].modified = Date()
                 try? CardWriter.save(store.cards[index], in: store.url)
-                store.registerUndoForUpdateLabels(cardTitle: cardTitle, newLabels: newLabels, oldLabels: oldLabels)
+                store.registerUndoForUpdateLabels(cardSlug: cardSlug, newLabels: newLabels, oldLabels: oldLabels)
             }
             store.undoManager?.setActionName("Edit Card Labels")
         }
@@ -430,7 +441,7 @@ public final class BoardStore: @unchecked Sendable {
     /// When moving between columns, the card file physically moves from
     /// cards/{oldColumn}/ to cards/{newColumn}/.
     public func moveCard(_ card: Card, toColumn columnID: String, atIndex index: Int? = nil) throws {
-        guard let cardIndex = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let cardIndex = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
@@ -441,7 +452,7 @@ public final class BoardStore: @unchecked Sendable {
 
         // Calculate new position
         let targetColumnCards: [Card] = cards(forColumn: columnID)
-            .filter { $0.title != card.title } // Exclude the card being moved
+            .filter { $0.slug != card.slug } // Exclude the card being moved
         let newPosition: String
 
         if let targetIndex = index {
@@ -484,15 +495,15 @@ public final class BoardStore: @unchecked Sendable {
         sortCards()
 
         // Register undo action: move back to original column and position
-        registerUndoForMoveCard(card.title, fromColumn: oldColumn, fromPosition: oldPosition, toColumn: columnID, toPosition: newPosition)
+        registerUndoForMoveCard(card.slug, fromColumn: oldColumn, fromPosition: oldPosition, toColumn: columnID, toPosition: newPosition)
     }
 
     /// Registers an undo action for moving a card.
     /// Undo will restore the card to its original column and position.
-    private func registerUndoForMoveCard(_ cardTitle: String, fromColumn: String, fromPosition: String, toColumn: String, toPosition: String) {
+    private func registerUndoForMoveCard(_ cardSlug: String, fromColumn: String, fromPosition: String, toColumn: String, toPosition: String) {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: move card back to original column with original position
-            guard let cardIndex = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+            guard let cardIndex = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
 
             let currentColumn: String = store.cards[cardIndex].column
             store.cards[cardIndex].column = fromColumn
@@ -504,7 +515,7 @@ public final class BoardStore: @unchecked Sendable {
 
             // Register redo: move to new column again
             store.undoManager?.registerUndo(withTarget: store) { store in
-                guard let cardIndex = store.cards.firstIndex(where: { $0.title == cardTitle }) else { return }
+                guard let cardIndex = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
 
                 let currentColumn: String = store.cards[cardIndex].column
                 store.cards[cardIndex].column = toColumn
@@ -514,7 +525,7 @@ public final class BoardStore: @unchecked Sendable {
                 try? CardWriter.save(store.cards[cardIndex], in: store.url, previousColumn: currentColumn)
                 store.sortCards()
 
-                store.registerUndoForMoveCard(cardTitle, fromColumn: fromColumn, fromPosition: fromPosition, toColumn: toColumn, toPosition: toPosition)
+                store.registerUndoForMoveCard(cardSlug, fromColumn: fromColumn, fromPosition: fromPosition, toColumn: toColumn, toPosition: toPosition)
             }
             store.undoManager?.setActionName("Move Card")
         }
@@ -529,7 +540,7 @@ public final class BoardStore: @unchecked Sendable {
         let cardToRestore: Card = card
 
         try CardWriter.delete(card, in: url)
-        cards.removeAll { $0.title == card.title }
+        cards.removeAll { $0.slug == card.slug }
 
         // Register undo action: restore the deleted card
         registerUndoForDeleteCard(cardToRestore)
@@ -547,7 +558,7 @@ public final class BoardStore: @unchecked Sendable {
             // Register redo: delete the card again
             store.undoManager?.registerUndo(withTarget: store) { store in
                 try? CardWriter.delete(card, in: store.url)
-                store.cards.removeAll { $0.title == card.title }
+                store.cards.removeAll { $0.slug == card.slug }
                 store.registerUndoForDeleteCard(card)
             }
             store.undoManager?.setActionName("Delete Card")
@@ -562,7 +573,7 @@ public final class BoardStore: @unchecked Sendable {
         // Capture card state and archive path for undo
         let cardToRestore: Card = card
         let archivePath: URL = try CardWriter.archive(card, in: url)
-        cards.removeAll { $0.title == card.title }
+        cards.removeAll { $0.slug == card.slug }
 
         // Register undo action: unarchive the card
         registerUndoForArchiveCard(cardToRestore, archivePath: archivePath)
@@ -580,7 +591,7 @@ public final class BoardStore: @unchecked Sendable {
             // Register redo: archive the card again
             store.undoManager?.registerUndo(withTarget: store) { store in
                 if let newArchivePath = try? CardWriter.archive(card, in: store.url) {
-                    store.cards.removeAll { $0.title == card.title }
+                    store.cards.removeAll { $0.slug == card.slug }
                     store.registerUndoForArchiveCard(card, archivePath: newArchivePath)
                 }
             }
@@ -613,7 +624,7 @@ public final class BoardStore: @unchecked Sendable {
         // Calculate position right after the original card
         let columnCards: [Card] = cards(forColumn: card.column)
         let newPosition: String
-        if let originalIndex: Int = columnCards.firstIndex(where: { $0.title == card.title }) {
+        if let originalIndex: Int = columnCards.firstIndex(where: { $0.slug == card.slug }) {
             if originalIndex + 1 < columnCards.count {
                 // Insert between original and next card
                 let nextCard: Card = columnCards[originalIndex + 1]
@@ -627,8 +638,8 @@ public final class BoardStore: @unchecked Sendable {
             newPosition = LexPosition.after(card.position)
         }
 
-        // Create the duplicate card
-        let duplicate: Card = Card(
+        // Create the duplicate card with a new slug derived from the copy title
+        let duplicate: Card = Card.create(
             title: copyTitle,
             column: card.column,
             position: newPosition,
@@ -657,7 +668,7 @@ public final class BoardStore: @unchecked Sendable {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: delete the duplicate
             try? CardWriter.delete(duplicate, in: store.url)
-            store.cards.removeAll { $0.title == duplicate.title }
+            store.cards.removeAll { $0.slug == duplicate.slug }
 
             // Register redo: re-create the duplicate
             store.undoManager?.registerUndo(withTarget: store) { store in
@@ -771,7 +782,7 @@ public final class BoardStore: @unchecked Sendable {
         for card in cardsToArchive {
             let archivePath: URL = try CardWriter.archive(card, in: url)
             archivedInfo.append((card: card, archivePath: archivePath))
-            cards.removeAll { $0.title == card.title }
+            cards.removeAll { $0.slug == card.slug }
             archived += 1
         }
 
@@ -802,7 +813,7 @@ public final class BoardStore: @unchecked Sendable {
                 for info in archivedInfo {
                     if let archivePath = try? CardWriter.archive(info.card, in: store.url) {
                         newArchivedInfo.append((card: info.card, archivePath: archivePath))
-                        store.cards.removeAll { $0.title == info.card.title }
+                        store.cards.removeAll { $0.slug == info.card.slug }
                     }
                 }
                 store.registerUndoForBulkArchive(newArchivedInfo)
@@ -830,7 +841,7 @@ public final class BoardStore: @unchecked Sendable {
         var deleted: Int = 0
         for card in cardsToDelete {
             try CardWriter.delete(card, in: url)
-            cards.removeAll { $0.title == card.title }
+            cards.removeAll { $0.slug == card.slug }
             deleted += 1
         }
 
@@ -859,7 +870,7 @@ public final class BoardStore: @unchecked Sendable {
             store.undoManager?.registerUndo(withTarget: store) { store in
                 for card in deletedCards {
                     try? CardWriter.delete(card, in: store.url)
-                    store.cards.removeAll { $0.title == card.title }
+                    store.cards.removeAll { $0.slug == card.slug }
                 }
                 store.registerUndoForBulkDelete(deletedCards)
             }
@@ -881,7 +892,7 @@ public final class BoardStore: @unchecked Sendable {
     @discardableResult
     public func moveCards(_ cardsToMove: [Card], toColumn columnID: String) throws -> Int {
         // Capture original states for undo
-        var moveInfo: [(title: String, fromColumn: String, fromPosition: String)] = []
+        var moveInfo: [(slug: String, fromColumn: String, fromPosition: String)] = []
 
         // Sort cards by current position to maintain relative order
         let sortedCards: [Card] = cardsToMove.sorted { $0.position < $1.position }
@@ -891,7 +902,7 @@ public final class BoardStore: @unchecked Sendable {
 
         // Capture original states before moving
         for card in cardsToActuallyMove {
-            moveInfo.append((title: card.title, fromColumn: card.column, fromPosition: card.position))
+            moveInfo.append((slug: card.slug, fromColumn: card.column, fromPosition: card.position))
         }
 
         // Group all operations as one undoable action
@@ -916,7 +927,7 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Internal move card without undo registration (used for bulk moves).
     private func moveCardWithoutUndo(_ card: Card, toColumn columnID: String, atIndex index: Int? = nil) throws {
-        guard let cardIndex = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let cardIndex = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
@@ -924,7 +935,7 @@ public final class BoardStore: @unchecked Sendable {
 
         // Calculate new position
         let targetColumnCards: [Card] = cards(forColumn: columnID)
-            .filter { $0.title != card.title }
+            .filter { $0.slug != card.slug }
         let newPosition: String
 
         if let targetIndex = index {
@@ -963,13 +974,13 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Registers an undo action for bulk move.
     /// Undo will restore all cards to their original columns and positions.
-    private func registerUndoForBulkMove(_ moveInfo: [(title: String, fromColumn: String, fromPosition: String)], toColumn: String) {
+    private func registerUndoForBulkMove(_ moveInfo: [(slug: String, fromColumn: String, fromPosition: String)], toColumn: String) {
         guard !moveInfo.isEmpty else { return }
 
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: move all cards back to original columns
             for info in moveInfo {
-                guard let cardIndex = store.cards.firstIndex(where: { $0.title == info.title }) else { continue }
+                guard let cardIndex = store.cards.firstIndex(where: { $0.slug == info.slug }) else { continue }
 
                 let currentColumn: String = store.cards[cardIndex].column
                 store.cards[cardIndex].column = info.fromColumn
@@ -983,7 +994,7 @@ public final class BoardStore: @unchecked Sendable {
             // Register redo: move to target column again
             store.undoManager?.registerUndo(withTarget: store) { store in
                 for info in moveInfo {
-                    if let card = store.card(withTitle: info.title) {
+                    if let card = store.card(bySlug: info.slug) {
                         try? store.moveCardWithoutUndo(card, toColumn: toColumn, atIndex: nil)
                     }
                 }
@@ -1166,9 +1177,14 @@ public final class BoardStore: @unchecked Sendable {
     // MARK: - Public (for FileWatcher / External Change Handling)
 
     /// Reloads a card from disk, updating the in-memory state.
-    public func reloadCard(at index: Int, from url: URL) throws {
+    ///
+    /// - Parameters:
+    ///   - index: The index of the card in the cards array
+    ///   - url: The URL of the card file on disk
+    ///   - slug: The slug (filename without extension) of the card
+    public func reloadCard(at index: Int, from url: URL, slug: String) throws {
         let content: String = try String(contentsOf: url, encoding: .utf8)
-        let reloadedCard: Card = try Card.parse(from: content)
+        let reloadedCard: Card = try Card.parse(from: content, slug: slug)
         cards[index] = reloadedCard
     }
 
@@ -1180,20 +1196,11 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Removes a card by its slug (used when externally deleted).
     ///
-    /// Checks both the card's sourceSlug (original filename) and the slugified title
-    /// to handle cards with non-standard filenames.
-    ///
     /// - Parameter slug: The filename slug of the card to remove
     /// - Returns: true if a card was removed, false otherwise
     @discardableResult
     public func removeCard(bySlug slug: String) -> Bool {
-        // First check sourceSlug (actual filename) since cards may have non-standard filenames
-        if let index: Int = cards.firstIndex(where: { $0.sourceSlug == slug }) {
-            cards.remove(at: index)
-            return true
-        }
-        // Fallback to slugified title for cards without a sourceSlug
-        if let index: Int = cards.firstIndex(where: { slugify($0.title) == slug }) {
+        if let index: Int = cards.firstIndex(where: { $0.slug == slug }) {
             cards.remove(at: index)
             return true
         }
@@ -1202,12 +1209,10 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Removes cards that no longer exist on disk.
     ///
-    /// Uses sourceSlug when available, falls back to slugified title.
+    /// - Parameter existingSlugs: Set of slugs that exist on disk
     public func removeCards(notIn existingSlugs: Set<String>) {
         cards.removeAll { card in
-            // Use sourceSlug if available, otherwise fall back to slugified title
-            let slug: String = card.sourceSlug ?? slugify(card.title)
-            return !existingSlugs.contains(slug)
+            return !existingSlugs.contains(card.slug)
         }
     }
 

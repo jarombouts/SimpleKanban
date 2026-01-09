@@ -2277,12 +2277,6 @@ extension Color {
     }
 }
 
-// MARK: - Card Identifiable
-
-extension Card: Identifiable {
-    public var id: String { title }
-}
-
 // MARK: - Toolbar Buttons
 
 /// Archive button that accepts both clicks and drag-drop.

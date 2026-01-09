@@ -223,16 +223,16 @@ struct SimpleKanbanIOSApp: App {
 
         // Handle creates and modifications
         for changedURL in changedURLs {
-            let filename: String = changedURL.deletingPathExtension().lastPathComponent
+            let slug: String = changedURL.deletingPathExtension().lastPathComponent
 
             guard FileManager.default.fileExists(atPath: changedURL.path) else {
                 continue
             }
 
-            if let existingIndex = store.cards.firstIndex(where: { slugify($0.title) == filename }) {
+            if let existingIndex = store.cards.firstIndex(where: { $0.slug == slug }) {
                 // Card was modified - reload
                 do {
-                    try store.reloadCard(at: existingIndex, from: changedURL)
+                    try store.reloadCard(at: existingIndex, from: changedURL, slug: slug)
                 } catch {
                     print("Error reloading card: \(error)")
                 }
@@ -240,7 +240,7 @@ struct SimpleKanbanIOSApp: App {
                 // New card - load it
                 do {
                     let content: String = try String(contentsOf: changedURL, encoding: .utf8)
-                    let newCard: Card = try Card.parse(from: content)
+                    let newCard: Card = try Card.parse(from: content, slug: slug)
                     store.addLoadedCard(newCard)
                 } catch {
                     print("Error loading new card: \(error)")

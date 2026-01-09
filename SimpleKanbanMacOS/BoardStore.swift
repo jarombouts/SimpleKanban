@@ -247,7 +247,7 @@ public final class BoardStore: @unchecked Sendable {
         // Apply card template if board has one
         let finalBody: String = body.isEmpty ? board.cardTemplate : body
 
-        let card: Card = Card(
+        let card: Card = Card.create(
             title: title,
             column: columnID,
             position: position,
@@ -293,39 +293,42 @@ public final class BoardStore: @unchecked Sendable {
     /// - Parameters:
     ///   - card: The card to update
     ///   - title: The new title
-    /// - Throws: CardWriterError.duplicateTitle if new title already exists
+    ///
+    /// Note: With slug-based identity, renaming a card's title does NOT rename
+    /// the file. The file stays at {slug}.md, only the content changes.
     public func updateCard(_ card: Card, title: String) throws {
-        guard let index = cards.firstIndex(where: { $0.title == card.title }) else {
+        guard let index = cards.firstIndex(where: { $0.slug == card.slug }) else {
             return
         }
 
+        let cardSlug: String = cards[index].slug
         let oldTitle: String = cards[index].title
         cards[index].title = title
         cards[index].modified = Date()
 
-        try CardWriter.save(cards[index], in: url, previousTitle: oldTitle)
+        try CardWriter.save(cards[index], in: url)
 
         // Register undo action: restore old title
-        registerUndoForUpdateTitle(newTitle: title, oldTitle: oldTitle)
+        registerUndoForUpdateTitle(cardSlug: cardSlug, newTitle: title, oldTitle: oldTitle)
     }
 
     /// Registers an undo action for updating a card's title.
     /// Undo will restore the old title; redo will apply the new title again.
-    private func registerUndoForUpdateTitle(newTitle: String, oldTitle: String) {
+    private func registerUndoForUpdateTitle(cardSlug: String, newTitle: String, oldTitle: String) {
         undoManager?.registerUndo(withTarget: self) { store in
             // Undo: restore old title
-            guard let index = store.cards.firstIndex(where: { $0.title == newTitle }) else { return }
+            guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
             store.cards[index].title = oldTitle
             store.cards[index].modified = Date()
-            try? CardWriter.save(store.cards[index], in: store.url, previousTitle: newTitle)
+            try? CardWriter.save(store.cards[index], in: store.url)
 
             // Register redo: apply new title again
             store.undoManager?.registerUndo(withTarget: store) { store in
-                guard let index = store.cards.firstIndex(where: { $0.title == oldTitle }) else { return }
+                guard let index = store.cards.firstIndex(where: { $0.slug == cardSlug }) else { return }
                 store.cards[index].title = newTitle
                 store.cards[index].modified = Date()
-                try? CardWriter.save(store.cards[index], in: store.url, previousTitle: oldTitle)
-                store.registerUndoForUpdateTitle(newTitle: newTitle, oldTitle: oldTitle)
+                try? CardWriter.save(store.cards[index], in: store.url)
+                store.registerUndoForUpdateTitle(cardSlug: cardSlug, newTitle: newTitle, oldTitle: oldTitle)
             }
             store.undoManager?.setActionName("Rename Card")
         }
@@ -613,7 +616,7 @@ public final class BoardStore: @unchecked Sendable {
         // Calculate position right after the original card
         let columnCards: [Card] = cards(forColumn: card.column)
         let newPosition: String
-        if let originalIndex: Int = columnCards.firstIndex(where: { $0.title == card.title }) {
+        if let originalIndex: Int = columnCards.firstIndex(where: { $0.slug == card.slug }) {
             if originalIndex + 1 < columnCards.count {
                 // Insert between original and next card
                 let nextCard: Card = columnCards[originalIndex + 1]
@@ -627,8 +630,8 @@ public final class BoardStore: @unchecked Sendable {
             newPosition = LexPosition.after(card.position)
         }
 
-        // Create the duplicate card
-        let duplicate: Card = Card(
+        // Create the duplicate card with a new slug derived from the copy title
+        let duplicate: Card = Card.create(
             title: copyTitle,
             column: card.column,
             position: newPosition,
@@ -1156,9 +1159,14 @@ public final class BoardStore: @unchecked Sendable {
     // MARK: - Internal (for FileWatcher)
 
     /// Reloads a card from disk, updating the in-memory state.
-    internal func reloadCard(at index: Int, from url: URL) throws {
+    ///
+    /// - Parameters:
+    ///   - index: The index of the card in the cards array
+    ///   - url: The URL of the card file on disk
+    ///   - slug: The slug (filename without extension) of the card
+    internal func reloadCard(at index: Int, from url: URL, slug: String) throws {
         let content: String = try String(contentsOf: url, encoding: .utf8)
-        let reloadedCard: Card = try Card.parse(from: content)
+        let reloadedCard: Card = try Card.parse(from: content, slug: slug)
         cards[index] = reloadedCard
     }
 
@@ -1170,20 +1178,11 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Removes a card by its slug (used when externally deleted).
     ///
-    /// Checks both the card's sourceSlug (original filename) and the slugified title
-    /// to handle cards with non-standard filenames.
-    ///
     /// - Parameter slug: The filename slug of the card to remove
     /// - Returns: true if a card was removed, false otherwise
     @discardableResult
     internal func removeCard(bySlug slug: String) -> Bool {
-        // First check sourceSlug (actual filename) since cards may have non-standard filenames
-        if let index: Int = cards.firstIndex(where: { $0.sourceSlug == slug }) {
-            cards.remove(at: index)
-            return true
-        }
-        // Fallback to slugified title for cards without a sourceSlug
-        if let index: Int = cards.firstIndex(where: { slugify($0.title) == slug }) {
+        if let index: Int = cards.firstIndex(where: { $0.slug == slug }) {
             cards.remove(at: index)
             return true
         }
@@ -1192,12 +1191,10 @@ public final class BoardStore: @unchecked Sendable {
 
     /// Removes cards that no longer exist on disk.
     ///
-    /// Uses sourceSlug when available, falls back to slugified title.
+    /// - Parameter existingSlugs: Set of slugs that exist on disk
     internal func removeCards(notIn existingSlugs: Set<String>) {
         cards.removeAll { card in
-            // Use sourceSlug if available, otherwise fall back to slugified title
-            let slug: String = card.sourceSlug ?? slugify(card.title)
-            return !existingSlugs.contains(slug)
+            return !existingSlugs.contains(card.slug)
         }
     }
 
