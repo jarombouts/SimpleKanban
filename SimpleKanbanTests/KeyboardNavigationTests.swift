@@ -5,7 +5,7 @@
 // enabling fast, reliable test execution.
 
 import XCTest
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - Mock Layout Provider
 
@@ -44,8 +44,11 @@ class MockBoardLayoutProvider: BoardLayoutProvider {
 // MARK: - Test Helpers
 
 /// Creates a test card with minimal required fields.
+/// Uses a slugified version of the title as the slug for testing.
 func makeCard(title: String, column: String, position: String = "n") -> Card {
+    let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
     return Card(
+        slug: slug,
         title: title,
         column: column,
         position: position,
@@ -716,7 +719,9 @@ class CmdArrowReorderTests: XCTestCase {
 
     /// Helper to create a card
     func makeCard(title: String, column: String, position: String = "n") -> Card {
+        let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,
@@ -899,7 +904,9 @@ class HomeEndNavigationTests: XCTestCase {
 
     /// Helper to create a card
     func makeCard(title: String, column: String, position: String = "n") -> Card {
+        let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,
@@ -1086,7 +1093,9 @@ class CmdArrowMoveColumnTests: XCTestCase {
 
     /// Helper to create a card
     func makeCard(title: String, column: String, position: String = "n") -> Card {
+        let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,
@@ -1269,7 +1278,9 @@ class OptionArrowPageNavigationTests: XCTestCase {
 
     /// Helper to create a card
     func makeCard(title: String, column: String, position: String = "n") -> Card {
+        let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,
@@ -1453,7 +1464,9 @@ class ShiftArrowExtendSelectionTests: XCTestCase {
 
     /// Helper to create a card
     func makeCard(title: String, column: String, position: String = "n") -> Card {
+        let slug: String = title.lowercased().replacingOccurrences(of: " ", with: "-")
         return Card(
+            slug: slug,
             title: title,
             column: column,
             position: position,

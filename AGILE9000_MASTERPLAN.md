@@ -1,4 +1,4 @@
-# SHIPPR: THE TASK DESTROYER 9000
+# TaskDestroyer: THE TASK DESTROYER 9000
 
 ## MASTERPLAN FOR TOTAL PRODUCTIVITY DOMINATION
 
@@ -24,7 +24,7 @@
 
 ## Project Identity
 
-### Name: **SHIPPR**
+### Name: **TaskDestroyer**
 ### Tagline: "BECAUSE 'JIRA' IS A FOUR-LETTER WORD"
 
 ### Alternative Names (for splash screen rotation)
@@ -48,11 +48,11 @@
 ```
 SimpleKanban/
 ├── Core/
-│   ├── SHIPPR/                          # NEW: All SHIPPR-specific code
+│   ├── TaskDestroyer/                          # NEW: All TaskDestroyer-specific code
 │   │   ├── Theme/
-│   │   │   ├── SHIPPRTheme.swift        # Color palette, typography, spacing
-│   │   │   ├── SHIPPRColors.swift       # Color definitions
-│   │   │   └── ThemeManager.swift       # Theme switching (Normal ↔ SHIPPR)
+│   │   │   ├── TaskDestroyerTheme.swift        # Color palette, typography, spacing
+│   │   │   ├── TaskDestroyerColors.swift       # Color definitions
+│   │   │   └── ThemeManager.swift       # Theme switching (Normal ↔ TaskDestroyer)
 │   │   │
 │   │   ├── Sound/
 │   │   │   ├── SoundManager.swift       # Audio playback singleton
@@ -109,7 +109,7 @@ Central system that broadcasts events so multiple systems can react:
 
 ```swift
 // When a task is completed, broadcast it
-enum SHIPPREvent {
+enum TaskDestroyerEvent {
     case taskCompleted(Card, age: TimeInterval)
     case taskCreated(Card)
     case taskDeleted(Card)
@@ -164,27 +164,27 @@ Build the infrastructure that all other features depend on.
 
 ### Tasks
 
-#### 1.1 Create SHIPPR Directory Structure
+#### 1.1 Create TaskDestroyer Directory Structure
 Create all the directories and placeholder files.
 
-#### 1.2 Implement SHIPPREventBus
+#### 1.2 Implement TaskDestroyerEventBus
 ```swift
-// SHIPPR/Core/SHIPPREventBus.swift
+// TaskDestroyer/Core/TaskDestroyerEventBus.swift
 
 import Combine
 
-/// Central event bus for SHIPPR effects and reactions
+/// Central event bus for TaskDestroyer effects and reactions
 /// All visual/audio effects subscribe to this rather than coupling directly
-final class SHIPPREventBus: ObservableObject {
-    static let shared: SHIPPREventBus = SHIPPREventBus()
+final class TaskDestroyerEventBus: ObservableObject {
+    static let shared: TaskDestroyerEventBus = TaskDestroyerEventBus()
 
-    private let eventSubject: PassthroughSubject<SHIPPREvent, Never> = PassthroughSubject()
+    private let eventSubject: PassthroughSubject<TaskDestroyerEvent, Never> = PassthroughSubject()
 
-    var events: AnyPublisher<SHIPPREvent, Never> {
+    var events: AnyPublisher<TaskDestroyerEvent, Never> {
         eventSubject.eraseToAnyPublisher()
     }
 
-    func emit(_ event: SHIPPREvent) {
+    func emit(_ event: TaskDestroyerEvent) {
         eventSubject.send(event)
     }
 }
@@ -192,13 +192,13 @@ final class SHIPPREventBus: ObservableObject {
 
 #### 1.3 Implement Settings Storage
 ```swift
-// SHIPPR/Core/SHIPPRSettings.swift
+// TaskDestroyer/Core/TaskDestroyerSettings.swift
 
 import Foundation
 
-/// User preferences for SHIPPR features
-final class SHIPPRSettings: ObservableObject {
-    static let shared: SHIPPRSettings = SHIPPRSettings()
+/// User preferences for TaskDestroyer features
+final class TaskDestroyerSettings: ObservableObject {
+    static let shared: TaskDestroyerSettings = TaskDestroyerSettings()
 
     @AppStorage("shippr_enabled") var enabled: Bool = true
     @AppStorage("shippr_violence_level") var violenceLevel: ViolenceLevel = .standard
@@ -219,7 +219,7 @@ final class SHIPPRSettings: ObservableObject {
 
 #### 1.4 Implement Effect Intensity Calculator
 ```swift
-// SHIPPR/Core/EffectIntensity.swift
+// TaskDestroyer/Core/EffectIntensity.swift
 
 import Foundation
 
@@ -278,13 +278,13 @@ Modify existing code to emit events:
 // In BoardDocument.swift or wherever cards are moved/created/deleted
 
 // After a card is marked done:
-SHIPPREventBus.shared.emit(.taskCompleted(card, age: card.age))
+TaskDestroyerEventBus.shared.emit(.taskCompleted(card, age: card.age))
 
 // After a card is created:
-SHIPPREventBus.shared.emit(.taskCreated(card))
+TaskDestroyerEventBus.shared.emit(.taskCreated(card))
 
 // After a card is deleted:
-SHIPPREventBus.shared.emit(.taskDeleted(card))
+TaskDestroyerEventBus.shared.emit(.taskDeleted(card))
 ```
 
 ---
@@ -298,12 +298,12 @@ Transform the visual appearance into AGILE9000 aesthetic.
 
 #### 2.1 Define Color Palette
 ```swift
-// SHIPPR/Theme/SHIPPRColors.swift
+// TaskDestroyer/Theme/TaskDestroyerColors.swift
 
 import SwiftUI
 
-/// The SHIPPR color palette - dark, neon, aggressive
-enum SHIPPRColors {
+/// The TaskDestroyer color palette - dark, neon, aggressive
+enum TaskDestroyerColors {
     // Backgrounds
     static let void: Color = Color(hex: "#000000")           // Pure black
     static let darkMatter: Color = Color(hex: "#0a0a0a")     // Slightly less black
@@ -342,11 +342,11 @@ extension Color {
 
 #### 2.2 Define Typography
 ```swift
-// SHIPPR/Theme/SHIPPRTypography.swift
+// TaskDestroyer/Theme/TaskDestroyerTypography.swift
 
 import SwiftUI
 
-enum SHIPPRTypography {
+enum TaskDestroyerTypography {
     static let displayFont: Font = .system(size: 32, weight: .black, design: .monospaced)
     static let headingFont: Font = .system(size: 18, weight: .bold, design: .monospaced)
     static let bodyFont: Font = .system(size: 14, weight: .regular, design: .monospaced)
@@ -363,7 +363,7 @@ enum SHIPPRTypography {
 
 #### 2.3 Implement Theme Manager
 ```swift
-// SHIPPR/Theme/ThemeManager.swift
+// TaskDestroyer/Theme/ThemeManager.swift
 
 import SwiftUI
 
@@ -389,7 +389,7 @@ final class ThemeManager: ObservableObject {
 
 #### 2.4 Implement Glitch Text Effect
 ```swift
-// SHIPPR/Effects/GlitchText.swift
+// TaskDestroyer/Effects/GlitchText.swift
 
 import SwiftUI
 
@@ -434,7 +434,7 @@ struct GlitchText: View {
 
 #### 2.5 Implement Matrix Rain Background
 ```swift
-// SHIPPR/Effects/MatrixRain.swift
+// TaskDestroyer/Effects/MatrixRain.swift
 
 import SwiftUI
 
@@ -475,7 +475,7 @@ class MatrixRainNSView: NSView {
 }
 ```
 
-#### 2.6 Style Card View for SHIPPR
+#### 2.6 Style Card View for TaskDestroyer
 Modify card appearance:
 - Dark background with subtle neon border
 - Shame timer display
@@ -501,11 +501,11 @@ Implement a flexible sound system with multiple sound packs.
 
 #### 3.1 Implement Sound Manager
 ```swift
-// SHIPPR/Sound/SoundManager.swift
+// TaskDestroyer/Sound/SoundManager.swift
 
 import AVFoundation
 
-/// Handles all SHIPPR sound effects
+/// Handles all TaskDestroyer sound effects
 final class SoundManager: ObservableObject {
     static let shared: SoundManager = SoundManager()
 
@@ -531,15 +531,15 @@ final class SoundManager: ObservableObject {
     }
 
     private func subscribeToEvents() {
-        SHIPPREventBus.shared.events
+        TaskDestroyerEventBus.shared.events
             .sink { [weak self] event in
                 self?.handleEvent(event)
             }
             .store(in: &cancellables)
     }
 
-    private func handleEvent(_ event: SHIPPREvent) {
-        guard SHIPPRSettings.shared.soundsEnabled else { return }
+    private func handleEvent(_ event: TaskDestroyerEvent) {
+        guard TaskDestroyerSettings.shared.soundsEnabled else { return }
 
         switch event {
         case .taskCompleted(_, let age):
@@ -571,7 +571,7 @@ final class SoundManager: ObservableObject {
 
     func play(_ effect: SoundEffect, volume: Float = 1.0) {
         guard let player: AVAudioPlayer = players[effect] else { return }
-        player.volume = volume * SHIPPRSettings.shared.masterVolume
+        player.volume = volume * TaskDestroyerSettings.shared.masterVolume
         player.currentTime = 0
         player.play()
     }
@@ -580,7 +580,7 @@ final class SoundManager: ObservableObject {
 
 #### 3.2 Define Sound Effects Enum
 ```swift
-// SHIPPR/Sound/SoundEffect.swift
+// TaskDestroyer/Sound/SoundEffect.swift
 
 enum SoundEffect: String, CaseIterable {
     case gong
@@ -609,7 +609,7 @@ enum SoundEffect: String, CaseIterable {
 
 #### 3.3 Implement Sound Packs
 ```swift
-// SHIPPR/Sound/SoundPack.swift
+// TaskDestroyer/Sound/SoundPack.swift
 
 enum SoundPack: String, CaseIterable {
     case `default` = "Default"           // Explosions and gongs
@@ -648,7 +648,7 @@ Implement satisfying particle effects for task completion and other events.
 
 #### 4.1 Create SpriteKit Overlay
 ```swift
-// SHIPPR/Effects/ParticleOverlay.swift
+// TaskDestroyer/Effects/ParticleOverlay.swift
 
 import SpriteKit
 import SwiftUI
@@ -701,7 +701,7 @@ struct ParticleOverlayView: NSViewRepresentable {
 Using SpriteKit particle files (.sks) or programmatic:
 
 ```swift
-// SHIPPR/Effects/ParticlePresets.swift
+// TaskDestroyer/Effects/ParticlePresets.swift
 
 enum ParticlePreset {
     case explosion      // Burst of fire and sparks
@@ -745,7 +745,7 @@ enum ParticlePreset {
 
 #### 4.3 Implement Screen Shake
 ```swift
-// SHIPPR/Effects/ScreenShake.swift
+// TaskDestroyer/Effects/ScreenShake.swift
 
 import SwiftUI
 
@@ -801,7 +801,7 @@ extension View {
 
 #### 4.4 Implement Floating Text
 ```swift
-// SHIPPR/Effects/FloatingText.swift
+// TaskDestroyer/Effects/FloatingText.swift
 
 import SwiftUI
 
@@ -816,7 +816,7 @@ struct FloatingText: View {
 
     var body: some View {
         Text(text)
-            .font(SHIPPRTypography.headingFont)
+            .font(TaskDestroyerTypography.headingFont)
             .foregroundColor(color)
             .shadow(color: color.opacity(0.8), radius: 10)
             .opacity(opacity)
@@ -860,7 +860,7 @@ Implement the behavioral nudges and shame-based motivation.
 
 #### 5.1 Implement Shame Timer
 ```swift
-// SHIPPR/Gamification/ShameTimer.swift
+// TaskDestroyer/Gamification/ShameTimer.swift
 
 import SwiftUI
 
@@ -890,7 +890,7 @@ struct ShameTimerView: View {
         HStack(spacing: 4) {
             Image(systemName: shameLevel.icon)
             Text(shameLevel.text(days: days))
-                .font(SHIPPRTypography.captionFont)
+                .font(TaskDestroyerTypography.captionFont)
         }
         .foregroundColor(shameLevel.color)
         .modifier(PulseModifier(enabled: shameLevel == .rotting || shameLevel == .decomposing))
@@ -905,11 +905,11 @@ struct ShameTimerView: View {
 
         var color: Color {
             switch self {
-            case .fresh: return SHIPPRColors.textMuted
-            case .normal: return SHIPPRColors.textSecondary
-            case .stale: return SHIPPRColors.warning
-            case .rotting: return SHIPPRColors.danger
-            case .decomposing: return SHIPPRColors.danger
+            case .fresh: return TaskDestroyerColors.textMuted
+            case .normal: return TaskDestroyerColors.textSecondary
+            case .stale: return TaskDestroyerColors.warning
+            case .rotting: return TaskDestroyerColors.danger
+            case .decomposing: return TaskDestroyerColors.danger
             }
         }
 
@@ -985,7 +985,7 @@ Implement hidden features, achievements, and forbidden word detection.
 
 #### 6.1 Forbidden Words Detection
 ```swift
-// SHIPPR/EasterEggs/ForbiddenWords.swift
+// TaskDestroyer/EasterEggs/ForbiddenWords.swift
 
 import SwiftUI
 
@@ -1024,7 +1024,7 @@ struct ForbiddenWordChecker {
 
 #### 6.2 Forbidden Word Modal
 ```swift
-// SHIPPR/EasterEggs/ForbiddenWordModal.swift
+// TaskDestroyer/EasterEggs/ForbiddenWordModal.swift
 
 struct ForbiddenWordModal: View {
     let word: String
@@ -1034,30 +1034,30 @@ struct ForbiddenWordModal: View {
     var body: some View {
         VStack(spacing: 20) {
             GlitchText(text: "⚠️ FORBIDDEN WORD DETECTED ⚠️", glitchIntensity: 0.8)
-                .font(SHIPPRTypography.headingFont)
-                .foregroundColor(SHIPPRColors.danger)
+                .font(TaskDestroyerTypography.headingFont)
+                .foregroundColor(TaskDestroyerColors.danger)
 
             Text("You typed: \"\(word)\"")
-                .font(SHIPPRTypography.bodyFont)
-                .foregroundColor(SHIPPRColors.textSecondary)
+                .font(TaskDestroyerTypography.bodyFont)
+                .foregroundColor(TaskDestroyerColors.textSecondary)
 
             Text(response)
-                .font(SHIPPRTypography.bodyFont)
-                .foregroundColor(SHIPPRColors.primary)
+                .font(TaskDestroyerTypography.bodyFont)
+                .foregroundColor(TaskDestroyerColors.primary)
                 .multilineTextAlignment(.center)
                 .padding()
 
             Button("I REPENT") {
                 isPresented = false
             }
-            .buttonStyle(SHIPPRButtonStyle())
+            .buttonStyle(TaskDestroyerButtonStyle())
         }
         .padding(40)
-        .background(SHIPPRColors.darkMatter)
+        .background(TaskDestroyerColors.darkMatter)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(SHIPPRColors.danger, lineWidth: 2)
+                .stroke(TaskDestroyerColors.danger, lineWidth: 2)
         )
     }
 }
@@ -1065,7 +1065,7 @@ struct ForbiddenWordModal: View {
 
 #### 6.3 Konami Code Detector
 ```swift
-// SHIPPR/EasterEggs/KonamiCode.swift
+// TaskDestroyer/EasterEggs/KonamiCode.swift
 
 import SwiftUI
 
@@ -1091,14 +1091,14 @@ class KonamiCodeDetector: ObservableObject {
 
     private func activate() {
         isActivated = true
-        SHIPPREventBus.shared.emit(.konamiCodeEntered)
+        TaskDestroyerEventBus.shared.emit(.konamiCodeEntered)
     }
 }
 ```
 
 #### 6.4 Scrum Master Mode (The Punishment)
 ```swift
-// SHIPPR/EasterEggs/ScrumMasterMode.swift
+// TaskDestroyer/EasterEggs/ScrumMasterMode.swift
 
 /// Activated by Konami code - adds all the ceremonies back
 struct ScrumMasterMode {
@@ -1126,7 +1126,7 @@ struct ScrumMasterMode {
 
 #### 6.5 The Jira Purge Ceremony
 ```swift
-// SHIPPR/EasterEggs/JiraPurge.swift
+// TaskDestroyer/EasterEggs/JiraPurge.swift
 
 /// The ritualistic deletion of old tasks
 struct JiraPurgeView: View {
@@ -1138,33 +1138,33 @@ struct JiraPurgeView: View {
     var body: some View {
         VStack(spacing: 30) {
             GlitchText(text: "THE JIRA PURGE", glitchIntensity: 0.5)
-                .font(SHIPPRTypography.displayFont)
-                .foregroundColor(SHIPPRColors.danger)
+                .font(TaskDestroyerTypography.displayFont)
+                .foregroundColor(TaskDestroyerColors.danger)
 
             Text("Tasks older than 60 days must be purged.")
-                .foregroundColor(SHIPPRColors.textSecondary)
+                .foregroundColor(TaskDestroyerColors.textSecondary)
 
             if currentIndex < oldTasks.count {
                 VStack {
                     Text("Task \(currentIndex + 1) of \(oldTasks.count)")
-                        .font(SHIPPRTypography.captionFont)
+                        .font(TaskDestroyerTypography.captionFont)
 
                     CardPreviewView(card: oldTasks[currentIndex])
 
                     Text("This task has been rotting for \(oldTasks[currentIndex].ageDays) days.")
-                        .foregroundColor(SHIPPRColors.danger)
+                        .foregroundColor(TaskDestroyerColors.danger)
 
                     Button("DELETE AND CHANT") {
                         performPurge()
                     }
-                    .buttonStyle(SHIPPRDangerButtonStyle())
+                    .buttonStyle(TaskDestroyerDangerButtonStyle())
                 }
             } else {
                 // Completion
                 VStack {
                     Text("🔥 PURGE COMPLETE 🔥")
-                        .font(SHIPPRTypography.headingFont)
-                        .foregroundColor(SHIPPRColors.success)
+                        .font(TaskDestroyerTypography.headingFont)
+                        .foregroundColor(TaskDestroyerColors.success)
 
                     Text("\(deletedCount) tickets sent to the void.")
                     Text("Your mind is clear. Your backlog is pure.")
@@ -1197,7 +1197,7 @@ struct JiraPurgeView: View {
 
 #### 6.6 Achievement System
 ```swift
-// SHIPPR/Gamification/Achievement.swift
+// TaskDestroyer/Gamification/Achievement.swift
 
 enum Achievement: String, CaseIterable {
     case firstBlood = "FIRST BLOOD"
@@ -1251,7 +1251,7 @@ enum Achievement: String, CaseIterable {
 
 #### 6.7 Achievement Manager
 ```swift
-// SHIPPR/Gamification/AchievementManager.swift
+// TaskDestroyer/Gamification/AchievementManager.swift
 
 final class AchievementManager: ObservableObject {
     static let shared: AchievementManager = AchievementManager()
@@ -1267,14 +1267,14 @@ final class AchievementManager: ObservableObject {
     }
 
     private func subscribeToEvents() {
-        SHIPPREventBus.shared.events
+        TaskDestroyerEventBus.shared.events
             .sink { [weak self] event in
                 self?.checkAchievements(for: event)
             }
             .store(in: &cancellables)
     }
 
-    private func checkAchievements(for event: SHIPPREvent) {
+    private func checkAchievements(for event: TaskDestroyerEvent) {
         switch event {
         case .taskCompleted:
             checkFirstBlood()
@@ -1298,14 +1298,14 @@ final class AchievementManager: ObservableObject {
         latestUnlock = achievement
         save()
 
-        SHIPPREventBus.shared.emit(.achievementUnlocked(achievement))
+        TaskDestroyerEventBus.shared.emit(.achievementUnlocked(achievement))
     }
 }
 ```
 
 #### 6.8 Stats Tracking
 ```swift
-// SHIPPR/Gamification/ShippingStats.swift
+// TaskDestroyer/Gamification/ShippingStats.swift
 
 final class ShippingStats: ObservableObject {
     static let shared: ShippingStats = ShippingStats()
@@ -1327,7 +1327,7 @@ final class ShippingStats: ObservableObject {
 Accessible from About or with a secret gesture:
 ```
 ╔════════════════════════════════════════╗
-║     SHIPPR PRODUCTIVITY METRICS        ║
+║     TaskDestroyer PRODUCTIVITY METRICS        ║
 ╠════════════════════════════════════════╣
 ║ Tasks Destroyed: 847                   ║
 ║ Current Streak: 12 days 🔥             ║
@@ -1352,7 +1352,7 @@ Create a memorable first-launch experience.
 
 #### 7.1 Terminal Onboarding View
 ```swift
-// SHIPPR/Onboarding/TerminalOnboarding.swift
+// TaskDestroyer/Onboarding/TerminalOnboarding.swift
 
 import SwiftUI
 
@@ -1362,7 +1362,7 @@ struct TerminalOnboardingView: View {
     @State private var showContinueButton: Bool = false
 
     private let script: [(String, Double)] = [
-        ("> INITIALIZING SHIPPR v9000.0.0...", 0.5),
+        ("> INITIALIZING TaskDestroyer v9000.0.0...", 0.5),
         ("> SCANNING FOR JIRA INSTALLATIONS...", 1.0),
         ("> FOUND 0 (GOOD)", 0.3),
         ("> LOADING ANTI-CEREMONY PROTOCOLS...", 0.8),
@@ -1381,7 +1381,7 @@ struct TerminalOnboardingView: View {
 
     var body: some View {
         ZStack {
-            SHIPPRColors.void.edgesIgnoringSafeArea(.all)
+            TaskDestroyerColors.void.edgesIgnoringSafeArea(.all)
             MatrixRainView(enabled: true).opacity(0.3)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1399,13 +1399,13 @@ struct TerminalOnboardingView: View {
                     Button("[ BEGIN DESTRUCTION ]") {
                         completeOnboarding()
                     }
-                    .buttonStyle(SHIPPRButtonStyle())
+                    .buttonStyle(TaskDestroyerButtonStyle())
                     .transition(.opacity)
                 }
             }
             .padding(40)
-            .font(SHIPPRTypography.bodyFont)
-            .foregroundColor(SHIPPRColors.success)
+            .font(TaskDestroyerTypography.bodyFont)
+            .foregroundColor(TaskDestroyerColors.success)
         }
         .onAppear {
             runScript()
@@ -1450,7 +1450,7 @@ struct BlinkingCursor: View {
 
 #### 7.2 Migration Prompt
 ```swift
-// SHIPPR/Onboarding/MigrationPrompt.swift
+// TaskDestroyer/Onboarding/MigrationPrompt.swift
 
 /// Shown when opening a board with "too many" columns
 struct MigrationPromptView: View {
@@ -1461,42 +1461,42 @@ struct MigrationPromptView: View {
     var body: some View {
         VStack(spacing: 24) {
             GlitchText(text: "⚠️ CEREMONY DETECTED ⚠️", glitchIntensity: 0.6)
-                .font(SHIPPRTypography.headingFont)
-                .foregroundColor(SHIPPRColors.warning)
+                .font(TaskDestroyerTypography.headingFont)
+                .foregroundColor(TaskDestroyerColors.warning)
 
             Text("We noticed you have \(columnCount) columns.")
-                .font(SHIPPRTypography.bodyFont)
+                .font(TaskDestroyerTypography.bodyFont)
 
             Text("That's \(columnCount - 2) too many.")
-                .font(SHIPPRTypography.bodyFont)
-                .foregroundColor(SHIPPRColors.danger)
+                .font(TaskDestroyerTypography.bodyFont)
+                .foregroundColor(TaskDestroyerColors.danger)
 
             Text("Would you like us to FIX THAT?")
-                .font(SHIPPRTypography.headingFont)
+                .font(TaskDestroyerTypography.headingFont)
 
             Text("All cards will be consolidated into TO DO and DONE based on their current status.")
-                .font(SHIPPRTypography.captionFont)
-                .foregroundColor(SHIPPRColors.textMuted)
+                .font(TaskDestroyerTypography.captionFont)
+                .foregroundColor(TaskDestroyerColors.textMuted)
                 .multilineTextAlignment(.center)
 
             HStack(spacing: 20) {
                 Button("CONSOLIDATE TO 2 COLUMNS") {
                     onMigrate()
                 }
-                .buttonStyle(SHIPPRButtonStyle())
+                .buttonStyle(TaskDestroyerButtonStyle())
 
                 Button("I LIKE SUFFERING") {
                     onKeep()
                 }
-                .buttonStyle(SHIPPRSecondaryButtonStyle())
+                .buttonStyle(TaskDestroyerSecondaryButtonStyle())
             }
         }
         .padding(40)
-        .background(SHIPPRColors.darkMatter)
+        .background(TaskDestroyerColors.darkMatter)
         .cornerRadius(12)
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(SHIPPRColors.warning, lineWidth: 2)
+                .stroke(TaskDestroyerColors.warning, lineWidth: 2)
         )
     }
 }
@@ -1506,23 +1506,23 @@ struct MigrationPromptView: View {
 
 ## File Structure
 
-Final directory structure for all SHIPPR code:
+Final directory structure for all TaskDestroyer code:
 
 ```
 SimpleKanban/
 ├── SimpleKanban/
-│   ├── SHIPPR/
+│   ├── TaskDestroyer/
 │   │   ├── Core/
-│   │   │   ├── SHIPPREventBus.swift
-│   │   │   ├── SHIPPRSettings.swift
+│   │   │   ├── TaskDestroyerEventBus.swift
+│   │   │   ├── TaskDestroyerSettings.swift
 │   │   │   ├── EffectIntensity.swift
 │   │   │   └── ViolenceLevel.swift
 │   │   │
 │   │   ├── Theme/
-│   │   │   ├── SHIPPRColors.swift
-│   │   │   ├── SHIPPRTypography.swift
+│   │   │   ├── TaskDestroyerColors.swift
+│   │   │   ├── TaskDestroyerTypography.swift
 │   │   │   ├── ThemeManager.swift
-│   │   │   └── SHIPPRButtonStyles.swift
+│   │   │   └── TaskDestroyerButtonStyles.swift
 │   │   │
 │   │   ├── Sound/
 │   │   │   ├── SoundManager.swift
@@ -1558,10 +1558,10 @@ SimpleKanban/
 │   │   │   └── MigrationPrompt.swift
 │   │   │
 │   │   └── Views/
-│   │       ├── SHIPPRCardView.swift
-│   │       ├── SHIPPRColumnView.swift
-│   │       ├── SHIPPRBoardView.swift
-│   │       ├── SHIPPRToolbar.swift
+│   │       ├── TaskDestroyerCardView.swift
+│   │       ├── TaskDestroyerColumnView.swift
+│   │       ├── TaskDestroyerBoardView.swift
+│   │       ├── TaskDestroyerToolbar.swift
 │   │       ├── StatsView.swift
 │   │       ├── AchievementsView.swift
 │   │       └── SettingsView.swift
@@ -1592,21 +1592,21 @@ SimpleKanban/
 ## Implementation Checklist
 
 ### Phase 1: Foundation
-- [ ] Create SHIPPR directory structure
-- [ ] Implement SHIPPREventBus
-- [ ] Implement SHIPPRSettings
+- [ ] Create TaskDestroyer directory structure
+- [ ] Implement TaskDestroyerEventBus
+- [ ] Implement TaskDestroyerSettings
 - [ ] Implement EffectIntensity
 - [ ] Implement ViolenceLevel enum
 - [ ] Hook into existing card lifecycle to emit events
 
 ### Phase 2: Visual Assault
-- [ ] Define SHIPPRColors palette
-- [ ] Define SHIPPRTypography
+- [ ] Define TaskDestroyerColors palette
+- [ ] Define TaskDestroyerTypography
 - [ ] Implement ThemeManager
-- [ ] Create SHIPPRButtonStyles
+- [ ] Create TaskDestroyerButtonStyles
 - [ ] Implement GlitchText effect
 - [ ] Implement MatrixRain background
-- [ ] Style CardView for SHIPPR theme
+- [ ] Style CardView for TaskDestroyer theme
 - [ ] Style ColumnView headers
 - [ ] Create GongView component
 - [ ] Add theme toggle in settings
@@ -1666,10 +1666,10 @@ SimpleKanban/
 - [ ] Test all effects together
 - [ ] Performance profiling (particles, matrix rain)
 - [ ] Add keyboard shortcuts for common actions
-- [ ] Add menu items for SHIPPR features
-- [ ] Create SHIPPR settings panel
-- [ ] Add "About SHIPPR" with credits and jokes
-- [ ] Add toggle to switch between Normal and SHIPPR mode
+- [ ] Add menu items for TaskDestroyer features
+- [ ] Create TaskDestroyer settings panel
+- [ ] Add "About TaskDestroyer" with credits and jokes
+- [ ] Add toggle to switch between Normal and TaskDestroyer mode
 
 ---
 

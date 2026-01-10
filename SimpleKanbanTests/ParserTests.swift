@@ -6,7 +6,7 @@
 
 import Foundation
 import Testing
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - Slugify Tests
 
@@ -71,7 +71,7 @@ struct FrontmatterParserTests {
             ---
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
 
         #expect(card.title == "Fix login bug")
         #expect(card.column == "todo")
@@ -95,7 +95,7 @@ struct FrontmatterParserTests {
             Add drag and drop support.
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
 
         #expect(card.title == "Implement drag and drop")
         #expect(card.column == "in-progress")
@@ -120,7 +120,7 @@ struct FrontmatterParserTests {
             Some notes here.
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
 
         #expect(card.body.contains("This is the body."))
         #expect(card.body.contains("## Notes"))
@@ -138,7 +138,7 @@ struct FrontmatterParserTests {
             ---
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
         #expect(card.labels.isEmpty)
     }
 
@@ -152,7 +152,7 @@ struct FrontmatterParserTests {
             ---
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
 
         #expect(card.labels.isEmpty)
         #expect(card.body.isEmpty)
@@ -168,7 +168,7 @@ struct FrontmatterParserTests {
             ---
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
         #expect(card.title == "Bug: Fix login issue")
     }
 
@@ -182,7 +182,7 @@ struct FrontmatterParserTests {
             ---
             """
 
-        let card: Card = try Card.parse(from: markdown)
+        let card: Card = try Card.parse(from: markdown, slug: "test-card")
         #expect(card.title == "Say \"Hello\" to users")
     }
 
@@ -196,7 +196,7 @@ struct FrontmatterParserTests {
             """
 
         #expect(throws: CardParseError.self) {
-            try Card.parse(from: markdown)
+            try Card.parse(from: markdown, slug: "test-card")
         }
     }
 
@@ -207,7 +207,7 @@ struct FrontmatterParserTests {
             """
 
         #expect(throws: CardParseError.self) {
-            try Card.parse(from: markdown)
+            try Card.parse(from: markdown, slug: "test-card")
         }
     }
 }
@@ -220,6 +220,7 @@ struct CardSerializationTests {
     @Test("Serializes card to markdown")
     func serializeCard() {
         let card: Card = Card(
+            slug: "test-card",
             title: "Test card",
             column: "todo",
             position: "n",
@@ -255,9 +256,9 @@ struct CardSerializationTests {
             This should survive the round trip.
             """
 
-        let card: Card = try Card.parse(from: original)
+        let card: Card = try Card.parse(from: original, slug: "test-card")
         let serialized: String = card.toMarkdown()
-        let reparsed: Card = try Card.parse(from: serialized)
+        let reparsed: Card = try Card.parse(from: serialized, slug: "test-card")
 
         #expect(reparsed.title == card.title)
         #expect(reparsed.column == card.column)
@@ -270,13 +271,14 @@ struct CardSerializationTests {
     @Test("Round-trip: title with special characters")
     func roundTripSpecialChars() throws {
         let card: Card = Card(
+            slug: "bug-fix-login-issue",
             title: "Bug: Fix \"login\" issue",
             column: "todo",
             position: "n"
         )
 
         let serialized: String = card.toMarkdown()
-        let reparsed: Card = try Card.parse(from: serialized)
+        let reparsed: Card = try Card.parse(from: serialized, slug: "test-card")
 
         #expect(reparsed.title == card.title)
     }

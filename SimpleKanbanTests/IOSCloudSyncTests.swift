@@ -10,7 +10,7 @@
 
 import Foundation
 import Testing
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - Mock Sync Status
 

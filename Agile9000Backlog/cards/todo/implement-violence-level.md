@@ -9,10 +9,10 @@ labels: [phase-1, infra, shared]
 
 ## Description
 
-Create the violence level system that lets users dial the SHIPPR experience up or down.
+Create the violence level system that lets users dial the TaskDestroyer experience up or down.
 
 - **Corporate Safe**: For open offices and screen sharing. Mild language, subtle effects.
-- **Standard**: The full SHIPPR experience. Profanity, explosions, the works.
+- **Standard**: The full TaskDestroyer experience. Profanity, explosions, the works.
 - **MAXIMUM DESTRUCTION**: Extra particles, louder sounds, more profanity, screen shake on everything.
 
 ## Acceptance Criteria
@@ -48,7 +48,7 @@ enum ViolenceLevel: String, CaseIterable, Identifiable {
         case .corporateSafe:
             return "For open offices. Mild language, subtle effects."
         case .standard:
-            return "The full SHIPPR experience."
+            return "The full TaskDestroyer experience."
         case .maximumDestruction:
             return "Extra everything. Not for the faint of heart."
         }
@@ -104,7 +104,7 @@ enum ViolenceLevel: String, CaseIterable, Identifiable {
 }
 ```
 
-File: `SHIPPR/Core/ViolenceLevel.swift`
+File: `TaskDestroyer/Core/ViolenceLevel.swift`
 
 ## Platform Notes
 

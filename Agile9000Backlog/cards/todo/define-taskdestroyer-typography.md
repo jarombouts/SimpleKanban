@@ -1,5 +1,5 @@
 ---
-title: Define SHIPPRTypography
+title: Define TaskDestroyerTypography
 column: todo
 position: h
 created: 2026-01-10T12:00:00Z
@@ -9,13 +9,13 @@ labels: [phase-2, ui, shared]
 
 ## Description
 
-Create the typography system for SHIPPR. Everything is monospace because we're developers, not designers. Headers are heavy, condensed, and ALL CAPS.
+Create the typography system for TaskDestroyer. Everything is monospace because we're developers, not designers. Headers are heavy, condensed, and ALL CAPS.
 
 The typography should feel like reading a terminal or an industrial warning sign.
 
 ## Acceptance Criteria
 
-- [ ] Create `SHIPPRTypography` enum with font definitions
+- [ ] Create `TaskDestroyerTypography` enum with font definitions
 - [ ] Define display font (large, black weight, monospace)
 - [ ] Define heading font (medium size, bold, monospace)
 - [ ] Define body font (standard size, regular, monospace)
@@ -31,7 +31,7 @@ The typography should feel like reading a terminal or an industrial warning sign
 ```swift
 import SwiftUI
 
-enum SHIPPRTypography {
+enum TaskDestroyerTypography {
     // ═══════════════════════════════════════════════════════════
     // FONT DEFINITIONS
     // ═══════════════════════════════════════════════════════════
@@ -95,27 +95,27 @@ enum SHIPPRTypography {
 extension View {
     func shipprDisplayStyle() -> some View {
         self
-            .font(SHIPPRTypography.display)
-            .kerning(SHIPPRTypography.displayKerning)
+            .font(TaskDestroyerTypography.display)
+            .kerning(TaskDestroyerTypography.displayKerning)
             .textCase(.uppercase)
     }
 
     func shipprHeadingStyle() -> some View {
         self
-            .font(SHIPPRTypography.heading)
-            .kerning(SHIPPRTypography.headingKerning)
+            .font(TaskDestroyerTypography.heading)
+            .kerning(TaskDestroyerTypography.headingKerning)
             .textCase(.uppercase)
     }
 
     func shipprBodyStyle() -> some View {
         self
-            .font(SHIPPRTypography.body)
-            .kerning(SHIPPRTypography.bodyKerning)
+            .font(TaskDestroyerTypography.body)
+            .kerning(TaskDestroyerTypography.bodyKerning)
     }
 }
 ```
 
-File: `SHIPPR/Theme/SHIPPRTypography.swift`
+File: `TaskDestroyer/Theme/TaskDestroyerTypography.swift`
 
 ## Platform Notes
 

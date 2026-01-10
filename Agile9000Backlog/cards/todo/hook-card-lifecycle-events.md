@@ -9,7 +9,7 @@ labels: [phase-1, integration, shared]
 
 ## Description
 
-Wire up the existing SimpleKanban card operations to emit SHIPPR events. This is the bridge between the core app and the SHIPPR effect systems.
+Wire up the existing SimpleKanban card operations to emit TaskDestroyer events. This is the bridge between the core app and the TaskDestroyer effect systems.
 
 When a card moves to "done", the app needs to broadcast `.taskCompleted` so all the fun stuff happens.
 
@@ -23,7 +23,7 @@ When a card moves to "done", the app needs to broadcast `.taskCompleted` so all 
 - [ ] Emit `.columnCleared` when all cards removed from column
 - [ ] Emit `.columnAdded` and `.columnDeleted` for column operations
 - [ ] Include card age in completion event
-- [ ] Guard emissions with `SHIPPRSettings.shared.enabled` check
+- [ ] Guard emissions with `TaskDestroyerSettings.shared.enabled` check
 - [ ] Ensure events fire AFTER the operation succeeds, not before
 
 ## Technical Notes
@@ -35,13 +35,13 @@ Find the existing card operation code (likely in `BoardDocument.swift` or simila
 func moveCard(_ card: Card, to column: Column, at position: Int) {
     // ... existing move logic ...
 
-    // Emit SHIPPR event after successful move
-    if SHIPPRSettings.shared.enabled {
+    // Emit TaskDestroyer event after successful move
+    if TaskDestroyerSettings.shared.enabled {
         if column.isDoneColumn {
             let age = Date().timeIntervalSince(card.createdDate)
-            SHIPPREventBus.shared.emit(.taskCompleted(card, age: age))
+            TaskDestroyerEventBus.shared.emit(.taskCompleted(card, age: age))
         } else {
-            SHIPPREventBus.shared.emit(.taskMoved(card, from: oldColumn, to: column))
+            TaskDestroyerEventBus.shared.emit(.taskMoved(card, from: oldColumn, to: column))
         }
     }
 }
@@ -61,5 +61,5 @@ This integrates with existing codebase which should be platform-shared. The even
 
 ## Dependencies
 
-- Requires: SHIPPREventBus
-- Requires: SHIPPRSettings
+- Requires: TaskDestroyerEventBus
+- Requires: TaskDestroyerSettings

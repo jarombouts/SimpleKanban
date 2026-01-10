@@ -3,7 +3,7 @@
 
 import Foundation
 import Testing
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - BoardStore Tests
 
@@ -103,7 +103,7 @@ struct BoardStoreTests {
         #expect(content.contains("column: in-progress"))
     }
 
-    @Test("Updates card title and renames file")
+    @Test("Updates card title without renaming file (slug is immutable)")
     func updatesCardTitle() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -111,16 +111,15 @@ struct BoardStoreTests {
         let store: BoardStore = try BoardStore(url: tempDir)
         try store.addCard(title: "Old Title", toColumn: "todo")
 
-        let oldPath: URL = tempDir.appendingPathComponent("cards/todo/old-title.md")
-        #expect(FileManager.default.fileExists(atPath: oldPath.path))
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/old-title.md")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
 
         try store.updateCard(store.cards[0], title: "New Title")
 
+        // Title changes but file stays at original slug
         #expect(store.cards[0].title == "New Title")
-        #expect(!FileManager.default.fileExists(atPath: oldPath.path))
-
-        let newPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
-        #expect(FileManager.default.fileExists(atPath: newPath.path))
+        #expect(store.cards[0].slug == "old-title")
+        #expect(FileManager.default.fileExists(atPath: cardPath.path))
     }
 
     @Test("Deletes card from column subdirectory")
@@ -231,7 +230,7 @@ struct BoardStoreTests {
         #expect(content.contains("column: in-progress"))
 
         // Also verify by re-parsing the file
-        let card: Card = try Card.parse(from: content)
+        let card: Card = try Card.parse(from: content, slug: "test-card")
         #expect(card.column == "in-progress")
     }
 
@@ -1185,7 +1184,7 @@ struct BoardStoreUndoTests {
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
     }
 
-    @Test("Redo title change reapplies new title")
+    @Test("Redo title change reapplies new title (slug stays same)")
     func redoTitleChange() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
@@ -1204,7 +1203,8 @@ struct BoardStoreUndoTests {
         undoManager.redo()
 
         #expect(store.cards[0].title == "New Title")
-        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
+        // File stays at original slug even after title change
+        let cardPath: URL = tempDir.appendingPathComponent("cards/todo/original-title.md")
         #expect(FileManager.default.fileExists(atPath: cardPath.path))
     }
 

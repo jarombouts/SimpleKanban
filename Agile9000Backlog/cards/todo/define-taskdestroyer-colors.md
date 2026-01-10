@@ -1,5 +1,5 @@
 ---
-title: Define SHIPPRColors palette
+title: Define TaskDestroyerColors palette
 column: todo
 position: g
 created: 2026-01-10T12:00:00Z
@@ -9,13 +9,13 @@ labels: [phase-2, ui, shared]
 
 ## Description
 
-Create the SHIPPR color palette - a dark, neon-soaked aesthetic that screams "productivity through destruction."
+Create the TaskDestroyer color palette - a dark, neon-soaked aesthetic that screams "productivity through destruction."
 
 The palette is inspired by cyberpunk/hacker aesthetics: pure black backgrounds, radioactive orange for primary actions, electric cyan for secondary, toxic green for success.
 
 ## Acceptance Criteria
 
-- [ ] Create `SHIPPRColors` enum with all color definitions
+- [ ] Create `TaskDestroyerColors` enum with all color definitions
 - [ ] Add Color extension for hex string initialization
 - [ ] Define background colors (void, darkMatter, cardBackground)
 - [ ] Define primary accent (radioactive orange + glow variant)
@@ -32,7 +32,7 @@ The palette is inspired by cyberpunk/hacker aesthetics: pure black backgrounds, 
 ```swift
 import SwiftUI
 
-enum SHIPPRColors {
+enum TaskDestroyerColors {
     // ═══════════════════════════════════════════════════════════
     // BACKGROUNDS
     // ═══════════════════════════════════════════════════════════
@@ -129,7 +129,7 @@ extension Color {
 }
 ```
 
-File: `SHIPPR/Theme/SHIPPRColors.swift`
+File: `TaskDestroyer/Theme/TaskDestroyerColors.swift`
 
 ## Platform Notes
 

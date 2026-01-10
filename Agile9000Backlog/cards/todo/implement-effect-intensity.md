@@ -91,7 +91,7 @@ enum EffectIntensity {
 }
 ```
 
-File: `SHIPPR/Core/EffectIntensity.swift`
+File: `TaskDestroyer/Core/EffectIntensity.swift`
 
 ## Platform Notes
 

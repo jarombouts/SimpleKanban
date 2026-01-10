@@ -5,7 +5,7 @@
 
 import Foundation
 import Testing
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - BoardLoader Tests
 
@@ -246,6 +246,7 @@ struct CardWriterTests {
         defer { cleanup(tempDir) }
 
         let card: Card = Card(
+            slug: "new-card",
             title: "New Card",
             column: "todo",
             position: "n",
@@ -273,6 +274,7 @@ struct CardWriterTests {
 
         // Create initial card in todo
         var card: Card = Card(
+            slug: "my-card",
             title: "My Card",
             column: "todo",
             position: "n"
@@ -298,33 +300,8 @@ struct CardWriterTests {
         #expect(content.contains("Updated body"))
     }
 
-    @Test("Renames file when title changes")
-    func renamesFileOnTitleChange() throws {
-        let tempDir: URL = try createTempBoardDirectory()
-        defer { cleanup(tempDir) }
-
-        // Create initial card
-        let card: Card = Card(
-            title: "Old Title",
-            column: "todo",
-            position: "n"
-        )
-        try CardWriter.save(card, in: tempDir)
-
-        // Verify old file exists
-        let oldPath: URL = tempDir.appendingPathComponent("cards/todo/old-title.md")
-        #expect(FileManager.default.fileExists(atPath: oldPath.path))
-
-        // Update title and save
-        var updatedCard: Card = card
-        updatedCard.title = "New Title"
-        try CardWriter.save(updatedCard, in: tempDir, previousTitle: "Old Title")
-
-        // Verify old file is gone, new file exists
-        #expect(!FileManager.default.fileExists(atPath: oldPath.path))
-        let newPath: URL = tempDir.appendingPathComponent("cards/todo/new-title.md")
-        #expect(FileManager.default.fileExists(atPath: newPath.path))
-    }
+    // Note: "Renames file when title changes" test removed because slug is now immutable.
+    // Title changes update file content only, not the filename.
 
     @Test("Deletes card file from column subdirectory")
     func deletesCard() throws {
@@ -333,6 +310,7 @@ struct CardWriterTests {
 
         // Create card
         let card: Card = Card(
+            slug: "to-delete",
             title: "To Delete",
             column: "todo",
             position: "n"
@@ -355,6 +333,7 @@ struct CardWriterTests {
 
         // Create card
         let card: Card = Card(
+            slug: "to-archive",
             title: "To Archive",
             column: "done",
             position: "n"
@@ -388,6 +367,7 @@ struct CardWriterTests {
 
         // Create first card
         let card1: Card = Card(
+            slug: "same-title",
             title: "Same Title",
             column: "todo",
             position: "n"
@@ -396,6 +376,7 @@ struct CardWriterTests {
 
         // Try to create second card with same title in same column
         let card2: Card = Card(
+            slug: "same-title",
             title: "Same Title",
             column: "todo",
             position: "t"
@@ -413,6 +394,7 @@ struct CardWriterTests {
 
         // Create card with empty column - should fail
         let card: Card = Card(
+            slug: "card-with-no-column",
             title: "Card With No Column",
             column: "",
             position: "n"
@@ -423,47 +405,18 @@ struct CardWriterTests {
         }
     }
 
-    @Test("Detects duplicate title even when slugs differ")
-    func detectsDuplicateTitleWithDifferentSlug() throws {
-        let tempDir: URL = try createTempBoardDirectory()
-        defer { cleanup(tempDir) }
+    // Note: "Detects duplicate title even when slugs differ" test removed.
+    // With slug-based identity, only slug uniqueness is enforced, not title uniqueness.
+    // Cards can now have the same title if they have different slugs (e.g., after external edits).
 
-        // Manually create a card file with a slug that doesn't match its title
-        // This simulates a card that was renamed externally but kept its old filename
-        let mismatchedCard: String = """
-            ---
-            title: My Actual Title
-            column: todo
-            position: n
-            ---
-            Some content.
-            """
-        try mismatchedCard.write(
-            to: tempDir.appendingPathComponent("cards/todo/old-different-slug.md"),
-            atomically: true,
-            encoding: .utf8
-        )
-
-        // Now try to create a new card with the same title (but different slug)
-        let newCard: Card = Card(
-            title: "My Actual Title",
-            column: "done",
-            position: "t"
-        )
-
-        // Should throw because title already exists, even though slug would be different
-        #expect(throws: CardWriterError.self) {
-            try CardWriter.save(newCard, in: tempDir, isNew: true)
-        }
-    }
-
-    @Test("Throws on duplicate title in different column")
+    @Test("Throws on duplicate slug in different column")
     func throwsOnDuplicateTitleAcrossColumns() throws {
         let tempDir: URL = try createTempBoardDirectory()
         defer { cleanup(tempDir) }
 
         // Create first card in todo
         let card1: Card = Card(
+            slug: "unique-title",
             title: "Unique Title",
             column: "todo",
             position: "n"
@@ -472,6 +425,7 @@ struct CardWriterTests {
 
         // Try to create second card with same title in done column
         let card2: Card = Card(
+            slug: "unique-title",
             title: "Unique Title",
             column: "done",
             position: "n"

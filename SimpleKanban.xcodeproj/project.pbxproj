@@ -553,7 +553,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleKanban.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleKanban";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleKanbanMacOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleKanbanMacOS";
 			};
 			name = Debug;
 		};
@@ -572,7 +572,7 @@
 				SUPPORTED_PLATFORMS = macosx;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleKanban.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleKanban";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SimpleKanbanMacOS.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SimpleKanbanMacOS";
 			};
 			name = Release;
 		};

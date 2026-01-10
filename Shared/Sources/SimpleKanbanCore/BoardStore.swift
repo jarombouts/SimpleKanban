@@ -14,6 +14,26 @@
 import Foundation
 import Observation
 
+// MARK: - TaskDestroyer Integration
+
+/// Helper to determine if a column is a "done"/"shipped" column.
+/// This is used to trigger completion effects when cards move here.
+private func isDoneColumn(id: String, name: String, isLastColumn: Bool) -> Bool {
+    let lowerId: String = id.lowercased()
+    let lowerName: String = name.lowercased()
+
+    // Check explicit done/shipped indicators
+    let doneKeywords: [String] = ["done", "shipped", "complete", "completed", "finished"]
+    for keyword in doneKeywords {
+        if lowerId.contains(keyword) || lowerName.contains(keyword) {
+            return true
+        }
+    }
+
+    // Fallback: last column is often the "done" column
+    return isLastColumn
+}
+
 // MARK: - BoardStore
 
 /// Manages the in-memory state of a Kanban board and coordinates persistence.
@@ -274,6 +294,11 @@ public final class BoardStore: @unchecked Sendable {
 
         // Register undo action: delete the card we just created
         registerUndoForAddCard(card)
+
+        // TaskDestroyer: emit card created event
+        if TaskDestroyerSettings.shared.enabled {
+            TaskDestroyerEventBus.shared.emit(.taskCreated(title: card.title))
+        }
     }
 
     /// Registers an undo action for adding a card.
@@ -496,6 +521,23 @@ public final class BoardStore: @unchecked Sendable {
 
         // Register undo action: move back to original column and position
         registerUndoForMoveCard(card.slug, fromColumn: oldColumn, fromPosition: oldPosition, toColumn: columnID, toPosition: newPosition)
+
+        // TaskDestroyer: emit appropriate event for move
+        if TaskDestroyerSettings.shared.enabled {
+            // Check if we're moving to a "done" column
+            let targetColumn: Column? = board.columns.first { $0.id == columnID }
+            let isLastColumn: Bool = board.columns.last?.id == columnID
+            let movingToDone: Bool = targetColumn.map { isDoneColumn(id: $0.id, name: $0.name, isLastColumn: isLastColumn) } ?? false
+
+            if movingToDone && oldColumn != columnID {
+                // Task completed! Calculate age and emit completion event
+                let age: TimeInterval = Date().timeIntervalSince(card.created)
+                TaskDestroyerEventBus.shared.emit(.taskCompleted(title: card.title, age: age))
+            } else if oldColumn != columnID {
+                // Regular column move
+                TaskDestroyerEventBus.shared.emit(.taskMoved(title: card.title, fromColumn: oldColumn, toColumn: columnID))
+            }
+        }
     }
 
     /// Registers an undo action for moving a card.
@@ -538,12 +580,18 @@ public final class BoardStore: @unchecked Sendable {
     public func deleteCard(_ card: Card) throws {
         // Capture card state before deletion for undo
         let cardToRestore: Card = card
+        let cardTitle: String = card.title
 
         try CardWriter.delete(card, in: url)
         cards.removeAll { $0.slug == card.slug }
 
         // Register undo action: restore the deleted card
         registerUndoForDeleteCard(cardToRestore)
+
+        // TaskDestroyer: emit card deleted event
+        if TaskDestroyerSettings.shared.enabled {
+            TaskDestroyerEventBus.shared.emit(.taskDeleted(title: cardTitle))
+        }
     }
 
     /// Registers an undo action for deleting a card.
@@ -572,11 +620,17 @@ public final class BoardStore: @unchecked Sendable {
     public func archiveCard(_ card: Card) throws {
         // Capture card state and archive path for undo
         let cardToRestore: Card = card
+        let cardTitle: String = card.title
         let archivePath: URL = try CardWriter.archive(card, in: url)
         cards.removeAll { $0.slug == card.slug }
 
         // Register undo action: unarchive the card
         registerUndoForArchiveCard(cardToRestore, archivePath: archivePath)
+
+        // TaskDestroyer: emit card archived event
+        if TaskDestroyerSettings.shared.enabled {
+            TaskDestroyerEventBus.shared.emit(.taskArchived(title: cardTitle))
+        }
     }
 
     /// Registers an undo action for archiving a card.

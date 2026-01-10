@@ -1,5 +1,5 @@
 ---
-title: Implement SHIPPRSettings
+title: Implement TaskDestroyerSettings
 column: todo
 position: c
 created: 2026-01-10T12:00:00Z
@@ -9,14 +9,14 @@ labels: [phase-1, infra, shared]
 
 ## Description
 
-Create a centralized settings manager for all SHIPPR preferences. Uses `@AppStorage` for persistence so settings survive app restarts.
+Create a centralized settings manager for all TaskDestroyer preferences. Uses `@AppStorage` for persistence so settings survive app restarts.
 
-This is the control center for the user's SHIPPR experience - violence level, sound toggles, theme choices, etc.
+This is the control center for the user's TaskDestroyer experience - violence level, sound toggles, theme choices, etc.
 
 ## Acceptance Criteria
 
-- [ ] Create `SHIPPRSettings` class as ObservableObject singleton
-- [ ] Add `enabled` toggle (master on/off for SHIPPR mode)
+- [ ] Create `TaskDestroyerSettings` class as ObservableObject singleton
+- [ ] Add `enabled` toggle (master on/off for TaskDestroyer mode)
 - [ ] Add `violenceLevel` setting (Corporate Safe / Standard / Maximum)
 - [ ] Add `soundsEnabled` toggle
 - [ ] Add `soundVolume` slider (0.0 - 1.0)
@@ -31,8 +31,8 @@ This is the control center for the user's SHIPPR experience - violence level, so
 ## Technical Notes
 
 ```swift
-final class SHIPPRSettings: ObservableObject {
-    static let shared = SHIPPRSettings()
+final class TaskDestroyerSettings: ObservableObject {
+    static let shared = TaskDestroyerSettings()
 
     // Master toggle
     @AppStorage("shippr_enabled") var enabled: Bool = true
@@ -73,7 +73,7 @@ final class SHIPPRSettings: ObservableObject {
 }
 ```
 
-File: `SHIPPR/Core/SHIPPRSettings.swift`
+File: `TaskDestroyer/Core/TaskDestroyerSettings.swift`
 
 ## Platform Notes
 

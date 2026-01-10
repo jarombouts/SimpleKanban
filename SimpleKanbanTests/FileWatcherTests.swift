@@ -11,7 +11,7 @@
 
 import Testing
 import Foundation
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - Test Helpers
 

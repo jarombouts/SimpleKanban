@@ -6,7 +6,7 @@
 
 import Foundation
 import Testing
-@testable import SimpleKanban
+@testable import SimpleKanbanMacOS
 
 // MARK: - Status Tests
 
