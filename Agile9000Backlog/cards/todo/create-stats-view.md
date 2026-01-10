@@ -1,0 +1,187 @@
+---
+title: Create StatsView hidden stats screen
+column: todo
+position: zy
+created: 2026-01-10T12:00:00Z
+modified: 2026-01-10T12:00:00Z
+labels: [phase-6, ui, shared]
+---
+
+## Description
+
+Create a hidden statistics screen accessible from About or with a secret gesture. Shows all the fun TaskBuster9000 metrics in a terminal/hacker aesthetic.
+
+## Acceptance Criteria
+
+- [ ] Create `StatsView` with terminal aesthetic
+- [ ] Show all shipping stats in formatted table
+- [ ] Include joke stats (story points not assigned: ∞)
+- [ ] Show per-word forbidden word counts
+- [ ] Animate numbers counting up on appear
+- [ ] Add "Export Stats" functionality (copy to clipboard)
+- [ ] Secret access method (e.g., 5-tap on About logo)
+- [ ] Monospace font, green-on-black theme
+
+## Technical Notes
+
+```swift
+struct StatsView: View {
+    @ObservedObject var stats = ShippingStats.shared
+    @ObservedObject var achievements = AchievementManager.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                // Header
+                TerminalHeader(text: "TASKBUSTER9000 PRODUCTIVITY METRICS")
+
+                // Stats table
+                TerminalBox {
+                    VStack(alignment: .leading, spacing: 8) {
+                        StatRow(label: "Tasks Destroyed", value: "\(stats.totalShipped)")
+                        StatRow(label: "Current Streak", value: "\(stats.currentStreak) days", highlight: stats.currentStreak >= 7)
+                        StatRow(label: "Longest Streak", value: "\(stats.longestStreak) days")
+                        Divider().background(TaskBusterColors.success.opacity(0.3))
+                        StatRow(label: "Meetings Avoided (est)", value: "\(stats.estimatedMeetingsAvoided)")
+                        StatRow(label: "Hours Saved (est)", value: "\(stats.estimatedHoursSaved)")
+                        StatRow(label: "Story Points NOT Assigned", value: stats.storyPointsNotAssigned)
+                        StatRow(label: "Ceremonies Skipped", value: "\(stats.ceremoniesSkipped)")
+                        Divider().background(TaskBusterColors.success.opacity(0.3))
+                        StatRow(label: "Jira Tickets Purged", value: "\(stats.totalPurged)")
+                        StatRow(label: "Purge Ceremonies", value: "\(stats.purgeCeremonies)")
+                        StatRow(label: "Meetings Prevented", value: "\(stats.meetingsPrevented)")
+                        StatRow(label: "Forbidden Words Typed", value: "\(stats.forbiddenWordsTyped)")
+                    }
+                }
+
+                // Achievements summary
+                TerminalHeader(text: "ACHIEVEMENTS")
+
+                TerminalBox {
+                    let unlocked = achievements.unlockedAchievements.count
+                    let total = Achievement.allCases.filter { !$0.isHidden }.count
+
+                    StatRow(label: "Unlocked", value: "\(unlocked) / \(total)")
+
+                    if unlocked > 0 {
+                        Divider().background(TaskBusterColors.success.opacity(0.3))
+                        ForEach(Array(achievements.unlockedAchievements), id: \.self) { achievement in
+                            HStack {
+                                Text(achievement.badge)
+                                Text(achievement.name)
+                                    .font(TaskBusterTypography.caption)
+                            }
+                        }
+                    }
+                }
+
+                // Forbidden words breakdown
+                if !stats.forbiddenWordsDetail.isEmpty {
+                    TerminalHeader(text: "FORBIDDEN WORDS LOG")
+
+                    TerminalBox {
+                        ForEach(stats.forbiddenWordsDetail.sorted(by: { $0.value > $1.value }), id: \.key) { word, count in
+                            StatRow(label: word, value: "x\(count)")
+                        }
+                    }
+                }
+
+                // Export button
+                Button("EXPORT STATS") {
+                    exportStats()
+                }
+                .buttonStyle(TaskBusterSecondaryButtonStyle())
+                .padding(.top, 20)
+            }
+            .padding(20)
+        }
+        .background(TaskBusterColors.void)
+    }
+
+    private func exportStats() {
+        let text = """
+        TASKBUSTER9000 PRODUCTIVITY REPORT
+        ==================================
+
+        Tasks Destroyed: \(stats.totalShipped)
+        Current Streak: \(stats.currentStreak) days
+        Longest Streak: \(stats.longestStreak) days
+
+        Meetings Avoided (est): \(stats.estimatedMeetingsAvoided)
+        Hours Saved (est): \(stats.estimatedHoursSaved)
+        Story Points NOT Assigned: ∞
+
+        Jira Tickets Purged: \(stats.totalPurged)
+        Forbidden Words Typed: \(stats.forbiddenWordsTyped)
+
+        Achievements: \(achievements.unlockedAchievements.count)
+
+        --
+        Generated by TaskBuster9000
+        WHERE SHIT GETS DONE
+        """
+
+        #if os(macOS)
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        #else
+        UIPasteboard.general.string = text
+        #endif
+
+        ToastManager.shared.show("Stats copied to clipboard", type: .success)
+    }
+}
+
+struct TerminalHeader: View {
+    let text: String
+
+    var body: some View {
+        Text("╔══ \(text) ══╗")
+            .font(TaskBusterTypography.heading)
+            .foregroundColor(TaskBusterColors.success)
+            .padding(.vertical, 10)
+    }
+}
+
+struct TerminalBox<Content: View>: View {
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading) {
+            content
+        }
+        .padding(16)
+        .background(TaskBusterColors.darkMatter)
+        .overlay(
+            Rectangle()
+                .stroke(TaskBusterColors.success.opacity(0.5), lineWidth: 1)
+        )
+    }
+}
+
+struct StatRow: View {
+    let label: String
+    let value: String
+    var highlight: Bool = false
+
+    var body: some View {
+        HStack {
+            Text(label)
+                .font(TaskBusterTypography.body)
+                .foregroundColor(TaskBusterColors.textSecondary)
+            Spacer()
+            Text(value)
+                .font(TaskBusterTypography.body)
+                .foregroundColor(highlight ? TaskBusterColors.warning : TaskBusterColors.success)
+        }
+    }
+}
+```
+
+File: `TaskBuster/Views/StatsView.swift`
+
+## Platform Notes
+
+Works on both platforms. Clipboard access differs by platform (NSPasteboard vs UIPasteboard).
+
+Access via: 5-tap on About screen logo, or add to developer/debug menu.
