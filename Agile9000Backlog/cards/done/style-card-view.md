@@ -1,9 +1,9 @@
 ---
 title: Style CardView for TaskBuster theme
-column: todo
-position: m
+column: done
+position: g
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-10T12:30:00Z
 labels: [phase-2, ui, shared]
 ---
 
@@ -13,17 +13,17 @@ Transform the card appearance for TaskBuster9000 mode. Cards should feel like da
 
 ## Acceptance Criteria
 
-- [ ] Apply dark background color from TaskBusterColors
-- [ ] Add subtle neon border (color based on card state)
-- [ ] Add hover glow effect (macOS)
-- [ ] Integrate ShameTimer display for task age
-- [ ] Show subtle smoke particles for rotting tasks (7+ days)
-- [ ] Add completion animation hook point
-- [ ] Style card title with TaskBusterTypography
-- [ ] Style labels with neon pill appearance
-- [ ] Add drag feedback visual (glow intensifies)
-- [ ] Ensure text remains readable on dark background
-- [ ] Smooth transition when switching themes
+- [x] Apply dark background color from TaskDestroyerColors
+- [x] Add subtle neon border (color based on card state/shame level)
+- [x] Add hover glow effect (macOS)
+- [x] Integrate ShameTimer display for task age (CompactShameTimerView)
+- [ ] Show subtle smoke particles for rotting tasks (7+ days) - deferred to particles phase
+- [ ] Add completion animation hook point - deferred to orchestration
+- [x] Style card title with TaskDestroyerTypography
+- [x] Style labels with neon pill appearance
+- [x] Add drag feedback visual (glow intensifies)
+- [x] Ensure text remains readable on dark background
+- [x] Smooth transition when switching themes
 
 ## Technical Notes
 

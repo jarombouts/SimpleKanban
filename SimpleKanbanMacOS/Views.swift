@@ -101,6 +101,36 @@ struct BoardView: View {
     /// Whether to show error alert
     @State private var showErrorAlert: Bool = false
 
+    /// TaskDestroyer settings for theme switching
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    /// Background color based on current theme mode
+    private var themeBackgroundColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.void : Color(nsColor: .windowBackgroundColor)
+    }
+
+    /// "No results" overlay with theme-aware styling
+    @ViewBuilder
+    private var noResultsOverlay: some View {
+        let iconColor: Color = destroyerSettings.enabled ? TaskDestroyerColors.textMuted : .gray
+        let textColor: Color = destroyerSettings.enabled ? TaskDestroyerColors.textSecondary : .secondary
+
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 36))
+                .foregroundStyle(iconColor)
+            Text("No cards match your filter")
+                .font(.headline)
+                .foregroundStyle(textColor)
+            Button("Clear Filter") {
+                store.clearFilters()
+            }
+            .buttonStyle(.bordered)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(themeBackgroundColor.opacity(0.9))
+    }
+
     // MARK: - Selection Helpers
 
     /// Returns the single selected card title, or nil if zero or multiple selected
@@ -314,8 +344,8 @@ struct BoardView: View {
                     if hasOverflow {
                         LinearGradient(
                             colors: [
-                                Color(nsColor: .windowBackgroundColor).opacity(0),
-                                Color(nsColor: .windowBackgroundColor).opacity(0.8)
+                                themeBackgroundColor.opacity(0),
+                                themeBackgroundColor.opacity(0.8)
                             ],
                             startPoint: .leading,
                             endPoint: .trailing
@@ -324,24 +354,12 @@ struct BoardView: View {
                         .allowsHitTesting(false)
                     }
                 }
+                .background(themeBackgroundColor)
             }
                 // Overlay "No results" message when filtering returns no cards
                 .overlay {
                     if store.isFiltering && store.filteredCards.isEmpty {
-                        VStack(spacing: 12) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 36))
-                                .foregroundStyle(.tertiary)
-                            Text("No cards match your filter")
-                                .font(.headline)
-                                .foregroundStyle(.secondary)
-                            Button("Clear Filter") {
-                                store.clearFilters()
-                            }
-                            .buttonStyle(.bordered)
-                        }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color(nsColor: .windowBackgroundColor).opacity(0.9))
+                        noResultsOverlay
                     }
                 }
             }
@@ -1053,6 +1071,32 @@ struct ColumnView: View {
     /// Height of the gap to show when dragging (matches approximate card height)
     private let dropGapHeight: CGFloat = 60
 
+    /// TaskDestroyer settings for theme switching
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    // MARK: - Themed Components
+
+    /// Card count pill with theme-aware styling
+    @ViewBuilder
+    private var cardCountPill: some View {
+        let countText: String = isFiltering ? "\(cards.count) of \(allCardsCount)" : "\(cards.count)"
+        let font: Font = destroyerSettings.enabled ? TaskDestroyerTypography.caption : .caption
+        let foreground: Color = destroyerSettings.enabled
+            ? (isFiltering ? TaskDestroyerColors.secondary : TaskDestroyerColors.textSecondary)
+            : .secondary
+        let background: Color = destroyerSettings.enabled
+            ? (isFiltering ? TaskDestroyerColors.secondarySubtle : TaskDestroyerColors.border)
+            : (isFiltering ? Color.accentColor.opacity(0.2) : Color.secondary.opacity(0.2))
+
+        Text(countText)
+            .font(font)
+            .foregroundStyle(foreground)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .background(background)
+            .clipShape(Capsule())
+    }
+
     var body: some View {
         // Show collapsed or expanded view based on column state
         if column.collapsed {
@@ -1134,14 +1178,21 @@ struct ColumnView: View {
                 Button(action: onToggleCollapse) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(destroyerSettings.enabled ? TaskDestroyerColors.textSecondary : .secondary)
                 }
                 .buttonStyle(.plain)
                 .help("Collapse column")
 
-                Text(column.name)
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                if destroyerSettings.enabled {
+                    Text(column.name.uppercased())
+                        .font(TaskDestroyerTypography.heading)
+                        .kerning(TaskDestroyerTypography.headingKerning)
+                        .foregroundColor(TaskDestroyerColors.textPrimary)
+                } else {
+                    Text(column.name)
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                }
 
                 Spacer()
 
@@ -1149,28 +1200,13 @@ struct ColumnView: View {
                 Button(action: onAddCard) {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(destroyerSettings.enabled ? TaskDestroyerColors.primary : nil)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
 
-                // Card count - show "X of Y" when filtering
-                if isFiltering {
-                    Text("\(cards.count) of \(allCardsCount)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.accentColor.opacity(0.2))
-                        .clipShape(Capsule())
-                } else {
-                    Text("\(cards.count)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(Color.secondary.opacity(0.2))
-                        .clipShape(Capsule())
-                }
+                // Card count pill
+                cardCountPill
             }
             .padding(.horizontal, 12)
             .padding(.top, 12)
@@ -1279,11 +1315,16 @@ struct ColumnView: View {
         .frame(width: columnWidth)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(destroyerSettings.enabled ? TaskDestroyerColors.darkMatter : Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isColumnTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
+                .stroke(
+                    isColumnTargeted
+                        ? (destroyerSettings.enabled ? TaskDestroyerColors.primary.opacity(0.5) : Color.accentColor.opacity(0.5))
+                        : (destroyerSettings.enabled ? TaskDestroyerColors.border : Color.clear),
+                    lineWidth: isColumnTargeted ? 2 : (destroyerSettings.enabled ? 1 : 0)
+                )
         )
     }
 
@@ -1521,7 +1562,20 @@ struct CardView: View {
     /// Whether the mouse is hovering over this card
     @State private var isHovered: Bool = false
 
+    /// TaskDestroyer settings for theme switching
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
     var body: some View {
+        if destroyerSettings.enabled {
+            taskDestroyerCard
+        } else {
+            standardCard
+        }
+    }
+
+    // MARK: - Standard Card (Light Mode)
+
+    private var standardCard: some View {
         VStack(alignment: .leading, spacing: 6) {
             // Title
             Text(card.title)
@@ -1567,6 +1621,116 @@ struct CardView: View {
         .onHover { hovering in
             isHovered = hovering
         }
+    }
+
+    // MARK: - TaskDestroyer Card (Dark Neon Mode)
+
+    private var shameLevel: ShameLevel {
+        ShameLevel.from(created: card.created)
+    }
+
+    private var borderColor: Color {
+        if isSelected {
+            return TaskDestroyerColors.primary
+        }
+        switch shameLevel {
+        case .fresh, .normal:
+            return TaskDestroyerColors.border
+        case .stale:
+            return TaskDestroyerColors.warning.opacity(0.6)
+        case .rotting:
+            return TaskDestroyerColors.danger.opacity(0.8)
+        case .decomposing:
+            return TaskDestroyerColors.danger
+        }
+    }
+
+    private var glowColor: Color {
+        isSelected ? TaskDestroyerColors.primaryGlow : borderColor
+    }
+
+    private var taskDestroyerCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Title with TaskDestroyer typography
+            Text(card.title)
+                .font(TaskDestroyerTypography.subheading)
+                .foregroundColor(TaskDestroyerColors.textPrimary)
+                .lineLimit(2)
+
+            // Body snippet
+            if !card.body.isEmpty {
+                let firstLine: String = card.body
+                    .components(separatedBy: .newlines)
+                    .first(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }) ?? ""
+
+                if !firstLine.isEmpty {
+                    Text(firstLine)
+                        .font(TaskDestroyerTypography.caption)
+                        .foregroundColor(TaskDestroyerColors.textSecondary)
+                        .lineLimit(1)
+                }
+            }
+
+            // Labels with neon styling
+            if !card.labels.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(card.labels, id: \.self) { labelID in
+                        TaskDestroyerLabelChip(labelID: labelID, labels: labels)
+                    }
+                }
+            }
+
+            // Shame timer
+            HStack {
+                Spacer()
+                CompactShameTimerView(createdDate: card.created)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(TaskDestroyerColors.cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(borderColor, lineWidth: (isHovered || isSelected) ? 2 : 1)
+        )
+        .shadow(
+            color: (isHovered || isSelected) ? glowColor.opacity(0.4) : .clear,
+            radius: (isHovered || isSelected) ? 8 : 0
+        )
+        .scaleEffect(isHovered ? 1.01 : 1.0)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+// MARK: - TaskDestroyer Label Chip
+
+/// A neon-styled label chip for TaskDestroyer mode.
+struct TaskDestroyerLabelChip: View {
+    let labelID: String
+    let labels: [CardLabel]
+
+    var body: some View {
+        let label: CardLabel? = labels.first { $0.id == labelID }
+        let color: Color = label.map { Color(hex: $0.color) } ?? .gray
+        let name: String = label?.name ?? labelID
+
+        Text(name)
+            .font(TaskDestroyerTypography.micro)
+            .foregroundColor(TaskDestroyerColors.textPrimary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(color.opacity(0.3))
+            )
+            .overlay(
+                Capsule()
+                    .stroke(color.opacity(0.7), lineWidth: 1)
+            )
     }
 }
 
