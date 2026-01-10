@@ -166,6 +166,14 @@ public final class BoardStore: @unchecked Sendable {
         return cards.filter { slugs.contains($0.slug) }
     }
 
+    /// Gets multiple cards by their titles.
+    ///
+    /// - Parameter titles: Set of card titles to look up
+    /// - Returns: Array of found cards (order not guaranteed)
+    public func cards(withTitles titles: Set<String>) -> [Card] {
+        return cards.filter { titles.contains($0.title) }
+    }
+
     // MARK: - Filtered Card Queries
 
     /// Returns filtered cards for a specific column, sorted by position.

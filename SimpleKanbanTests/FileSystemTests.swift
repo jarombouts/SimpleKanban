@@ -4,6 +4,7 @@
 // These tests use temporary directories to avoid polluting the real filesystem.
 
 import Foundation
+import SimpleKanbanCore
 import Testing
 @testable import SimpleKanbanMacOS
 

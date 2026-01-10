@@ -2,6 +2,7 @@
 // Tests for the in-memory board state management.
 
 import Foundation
+import SimpleKanbanCore
 import Testing
 @testable import SimpleKanbanMacOS
 

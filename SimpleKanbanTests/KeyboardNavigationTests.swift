@@ -4,6 +4,7 @@
 // These tests verify all keyboard navigation scenarios without requiring UI,
 // enabling fast, reliable test execution.
 
+import SimpleKanbanCore
 import XCTest
 @testable import SimpleKanbanMacOS
 

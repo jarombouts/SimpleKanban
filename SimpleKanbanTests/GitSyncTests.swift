@@ -5,6 +5,7 @@
 // Each test creates isolated repos to avoid interference.
 
 import Foundation
+import SimpleKanbanCore
 import Testing
 @testable import SimpleKanbanMacOS
 

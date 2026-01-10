@@ -5,6 +5,7 @@
 // unit testing of all keyboard interactions without requiring UI tests.
 
 import Foundation
+import SimpleKanbanCore
 
 // MARK: - Navigation Result
 

@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		90A1F9B82F0EDBD90065AE2A /* SimpleKanbanCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90A1F9B72F0EDBD90065AE2A /* SimpleKanbanCore */; };
+		90A1F9B92F0EDBD90065AE2B /* SimpleKanbanCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90A1F9B72F0EDBD90065AE2B /* SimpleKanbanCore */; };
+		90A1F9BA2F0EDBD90065AE2C /* SimpleKanbanCore in Frameworks */ = {isa = PBXBuildFile; productRef = 90A1F9B72F0EDBD90065AE2C /* SimpleKanbanCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -70,6 +72,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				90A1F9B92F0EDBD90065AE2B /* SimpleKanbanCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -77,6 +80,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				90A1F9BA2F0EDBD90065AE2C /* SimpleKanbanCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -146,6 +150,7 @@
 			);
 			name = SimpleKanbanMacOS;
 			packageProductDependencies = (
+				90A1F9B72F0EDBD90065AE2B /* SimpleKanbanCore */,
 			);
 			productName = SimpleKanban;
 			productReference = A1B2C3D40002000000000002 /* SimpleKanbanMacOS.app */;
@@ -169,6 +174,7 @@
 			);
 			name = SimpleKanbanTests;
 			packageProductDependencies = (
+				90A1F9B72F0EDBD90065AE2C /* SimpleKanbanCore */,
 			);
 			productName = SimpleKanbanTests;
 			productReference = A1B2C3D40003000000000001 /* SimpleKanbanTests.xctest */;
@@ -626,6 +632,14 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		90A1F9B72F0EDBD90065AE2A /* SimpleKanbanCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SimpleKanbanCore;
+		};
+		90A1F9B72F0EDBD90065AE2B /* SimpleKanbanCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = SimpleKanbanCore;
+		};
+		90A1F9B72F0EDBD90065AE2C /* SimpleKanbanCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = SimpleKanbanCore;
 		};

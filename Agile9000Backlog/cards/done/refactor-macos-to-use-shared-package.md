@@ -1,9 +1,9 @@
 ---
 title: Refactor macOS app to use SimpleKanbanCore shared package
-column: todo
+column: done
 position: a
 created: 2026-01-10T14:00:00Z
-modified: 2026-01-10T14:00:00Z
+modified: 2026-01-10T12:06:00Z
 labels: [infra, integration, macos]
 ---
 
@@ -15,12 +15,12 @@ Refactor the macOS app to import and use SimpleKanbanCore, removing the duplicat
 
 ## Acceptance Criteria
 
-- [ ] macOS app imports SimpleKanbanCore
-- [ ] Remove duplicated files from SimpleKanbanMacOS/ that exist in shared package
-- [ ] All existing functionality still works
-- [ ] TaskDestroyer types (colors, typography, effects) are accessible
-- [ ] Tests still pass
-- [ ] App builds and runs correctly
+- [x] macOS app imports SimpleKanbanCore
+- [x] Remove duplicated files from SimpleKanbanMacOS/ that exist in shared package
+- [x] All existing functionality still works
+- [x] TaskDestroyer types (colors, typography, effects) are accessible
+- [x] Tests still pass
+- [x] App builds and runs correctly
 
 ## Technical Notes
 

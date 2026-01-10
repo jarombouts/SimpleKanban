@@ -5,6 +5,7 @@
 // in Models.swift should make these pass.
 
 import Foundation
+import SimpleKanbanCore
 import Testing
 @testable import SimpleKanbanMacOS
 

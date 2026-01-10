@@ -14,6 +14,7 @@
 // - Tracks event flags to distinguish creates/modifies/deletes
 
 import Foundation
+import SimpleKanbanCore
 
 // MARK: - File Change Event
 

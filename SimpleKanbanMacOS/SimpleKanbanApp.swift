@@ -4,6 +4,7 @@
 // This is a native macOS Kanban board that persists state as human-readable
 // markdown files, designed for git-based collaboration.
 
+import SimpleKanbanCore
 import SwiftUI
 
 // MARK: - Focused Values

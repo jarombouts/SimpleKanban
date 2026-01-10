@@ -9,8 +9,9 @@
 // - Debouncing behavior
 // - BoardStore integration
 
-import Testing
 import Foundation
+import SimpleKanbanCore
+import Testing
 @testable import SimpleKanbanMacOS
 
 // MARK: - Test Helpers

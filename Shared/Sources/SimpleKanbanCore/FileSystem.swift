@@ -172,11 +172,10 @@ public enum CardWriterError: Error, Equatable {
 ///
 /// Design decisions:
 /// - Cards are stored in column subdirectories: cards/{column}/{slug}.md
-/// - Filenames are slugified titles (e.g., "Fix Bug" → "fix-bug.md")
+/// - Filenames are the card's slug (immutable identity)
 /// - Atomic writes prevent partial file corruption
-/// - Title changes trigger file rename (git tracks as rename)
+/// - Title changes update content, NOT filename (slug is immutable)
 /// - Column changes trigger file move between directories
-/// - Duplicate titles are rejected (filenames must be unique)
 public enum CardWriter {
 
     /// Saves a card to the cards/{column}/ directory.
