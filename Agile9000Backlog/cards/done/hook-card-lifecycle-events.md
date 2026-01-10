@@ -1,6 +1,6 @@
 ---
 title: Hook into card lifecycle to emit events
-column: todo
+column: done
 position: f
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z

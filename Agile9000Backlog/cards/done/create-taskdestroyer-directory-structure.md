@@ -1,6 +1,6 @@
 ---
 title: Create TaskDestroyer directory structure
-column: todo
+column: done
 position: a
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z

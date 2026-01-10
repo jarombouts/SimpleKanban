@@ -1,6 +1,6 @@
 ---
 title: Create ParticleSystem with SpriteKit overlay
-column: todo
+column: done
 position: w
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z

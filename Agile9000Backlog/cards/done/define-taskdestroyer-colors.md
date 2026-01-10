@@ -1,6 +1,6 @@
 ---
 title: Define TaskDestroyerColors palette
-column: todo
+column: done
 position: g
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z

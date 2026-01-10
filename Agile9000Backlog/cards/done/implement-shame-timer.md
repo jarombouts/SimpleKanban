@@ -1,6 +1,6 @@
 ---
 title: Implement ShameTimer display
-column: todo
+column: done
 position: zg
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z

@@ -8,17 +8,32 @@ Native macOS Kanban board app. Swift/SwiftUI only, no external dependencies. Sta
 
 See `roadmap.md` for implementation plan.
 
-### Development Backlog
+### Development Backlogs
 
-Our backlog lives in a **separate repository** at `../SimpleKanbanBacklog` (not inside this project repo). This:
-- Keeps project code separate from board data
+**SimpleKanban Core:** `../SimpleKanbanBacklog` (separate repo)
+- Core app features, iOS support, bug fixes
 - Tests git sync with a real remote
-- Demonstrates the recommended setup: one repo per board
 
-**Important:** When finishing a task, always update the backlog:
+**TaskDestroyer9000 (AGILE9000 branch):** `./Agile9000Backlog` (in-repo)
+- Satirical overlay features: effects, sounds, particles, easter eggs
+- See `AGILE9000_MASTERPLAN.md` for the full implementation plan
+- Cards organized by phase (Phase 1-7) and work type
+
+**When finishing a task:**
 1. Move the card from `cards/todo/` to `cards/done/`
 2. Update the `column: done` field in the card's frontmatter
 3. Update the `modified:` timestamp
+
+### TaskDestroyer9000 Architecture
+
+The TaskDestroyer code lives in `Shared/Sources/SimpleKanbanCore/TaskDestroyer/`:
+- `Core/` - Event bus, settings, effect intensity, violence levels
+- `Theme/` - Colors, typography, button styles, theme manager
+- `Effects/` - Glitch text, matrix rain, screen shake, particles, floating text
+- `Sound/` - Sound manager, effects enum, sound packs
+- `Gamification/` - Shame timer, achievements (WIP)
+
+All effects are triggered via `TaskDestroyerEventBus` using Combine publishers.
 
 ## Code Style
 

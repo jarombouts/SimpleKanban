@@ -1,6 +1,6 @@
 ---
 title: Implement GlitchText effect
-column: todo
+column: done
 position: k
 created: 2026-01-10T12:00:00Z
 modified: 2026-01-10T12:00:00Z
