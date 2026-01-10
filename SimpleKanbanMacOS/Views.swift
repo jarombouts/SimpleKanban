@@ -479,6 +479,10 @@ struct BoardView: View {
                     GitStatusIndicator(gitSync: gitSync)
                 }
 
+                // TaskDestroyer mode toggle
+                Divider()
+                TaskDestroyerModeToggle()
+
                 // Settings button
                 Divider()
                 Button(action: {
@@ -3437,6 +3441,74 @@ extension Color {
         let b: Int = Int(blue * 255)
 
         return String(format: "#%02x%02x%02x", r, g, b)
+    }
+}
+
+// MARK: - TaskDestroyer Mode Toggle
+
+/// Quick toggle between Standard and TaskDestroyer modes.
+/// Shows a flame icon - gray when off, orange when TaskDestroyer is enabled.
+struct TaskDestroyerModeToggle: View {
+    @AppStorage("taskdestroyer_enabled") private var enabled: Bool = false
+    @AppStorage("taskdestroyer_violence_level") private var violenceLevelRaw: String = "standard"
+
+    private var modeColor: Color {
+        guard enabled else { return .gray }
+        switch violenceLevelRaw {
+        case "corporate_safe": return .blue
+        case "maximum_destruction": return Color(red: 1.0, green: 0, blue: 0.5)
+        default: return .orange
+        }
+    }
+
+    private var modeLabel: String {
+        guard enabled else { return "" }
+        switch violenceLevelRaw {
+        case "corporate_safe": return "SAFE"
+        case "maximum_destruction": return "MAX"
+        default: return "ON"
+        }
+    }
+
+    var body: some View {
+        Menu {
+            Button(action: { enabled = false }) {
+                Label("Standard Mode", systemImage: enabled ? "circle" : "checkmark.circle.fill")
+            }
+
+            Divider()
+
+            Button(action: { enabled = true; violenceLevelRaw = "corporate_safe" }) {
+                Label("Corporate Safe", systemImage: enabled && violenceLevelRaw == "corporate_safe" ? "checkmark.circle.fill" : "circle")
+            }
+
+            Button(action: { enabled = true; violenceLevelRaw = "standard" }) {
+                Label("TaskDestroyer", systemImage: enabled && violenceLevelRaw == "standard" ? "checkmark.circle.fill" : "circle")
+            }
+
+            Button(action: { enabled = true; violenceLevelRaw = "maximum_destruction" }) {
+                Label("MAXIMUM DESTRUCTION", systemImage: enabled && violenceLevelRaw == "maximum_destruction" ? "checkmark.circle.fill" : "circle")
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: enabled ? "flame.fill" : "flame")
+                    .foregroundColor(modeColor)
+
+                if enabled {
+                    Text(modeLabel)
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(modeColor)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                Capsule()
+                    .fill(enabled ? modeColor.opacity(0.2) : Color.clear)
+            )
+        }
+        .menuStyle(.borderlessButton)
+        .help(enabled ? "TaskDestroyer: \(modeLabel)" : "Enable TaskDestroyer mode")
     }
 }
 
