@@ -8,48 +8,6 @@ import Combine
 import Foundation
 import SwiftUI
 
-// MARK: - Sound Pack
-
-/// Available sound effect packs.
-public enum SoundPack: String, CaseIterable, Identifiable, Sendable {
-    case classic = "classic"        // Gongs, explosions, power chords
-    case retro = "retro"            // 8-bit sounds
-    case office = "office"          // Stapler, coffee, keyboard sounds
-    case metal = "metal"            // Heavy metal stingers
-
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .classic: return "Classic"
-        case .retro: return "Retro 8-bit"
-        case .office: return "Office Space"
-        case .metal: return "Heavy Metal"
-        }
-    }
-}
-
-// MARK: - Theme Variant
-
-/// Available theme color schemes.
-public enum ThemeVariant: String, CaseIterable, Identifiable, Sendable {
-    case neon = "neon"              // Cyan/magenta/electric colors
-    case fire = "fire"              // Orange/red/yellow flames
-    case matrix = "matrix"          // Green on black, hacker vibes
-    case vaporwave = "vaporwave"    // Pink/purple/teal aesthetic
-
-    public var id: String { rawValue }
-
-    public var displayName: String {
-        switch self {
-        case .neon: return "Neon"
-        case .fire: return "Fire"
-        case .matrix: return "Matrix"
-        case .vaporwave: return "Vaporwave"
-        }
-    }
-}
-
 // MARK: - Settings Manager
 
 /// User preferences for TaskDestroyer features.
@@ -107,18 +65,13 @@ public final class TaskDestroyerSettings: ObservableObject {
     @AppStorage("taskdestroyer_sound_volume")
     public var soundVolume: Double = 0.7
 
+    /// Master volume (0.0 to 1.0) - used by SoundManager.
+    @AppStorage("taskdestroyer_master_volume")
+    public var masterVolume: Double = 0.8
+
     /// Raw storage for sound pack selection.
     @AppStorage("taskdestroyer_sound_pack")
-    public var soundPackRaw: String = SoundPack.classic.rawValue
-
-    /// The current sound pack.
-    public var soundPack: SoundPack {
-        get { SoundPack(rawValue: soundPackRaw) ?? .classic }
-        set {
-            soundPackRaw = newValue.rawValue
-            objectWillChange.send()
-        }
-    }
+    public var soundPackRaw: String = "default"
 
     // MARK: - Visual Settings
 
@@ -138,18 +91,9 @@ public final class TaskDestroyerSettings: ObservableObject {
     @AppStorage("taskdestroyer_glitch_text_enabled")
     public var glitchTextEnabled: Bool = true
 
-    /// Raw storage for theme variant.
+    /// Raw storage for theme variant (uses TaskDestroyerVariant from ThemeManager).
     @AppStorage("taskdestroyer_theme_variant")
-    public var themeVariantRaw: String = ThemeVariant.neon.rawValue
-
-    /// The current theme variant.
-    public var themeVariant: ThemeVariant {
-        get { ThemeVariant(rawValue: themeVariantRaw) ?? .neon }
-        set {
-            themeVariantRaw = newValue.rawValue
-            objectWillChange.send()
-        }
-    }
+    public var themeVariantRaw: String = "neon"
 
     // MARK: - Stats Tracking
 
@@ -188,15 +132,16 @@ public final class TaskDestroyerSettings: ObservableObject {
     /// Reset all settings to their default values.
     public func resetToDefaults() {
         enabled = false
-        violenceLevel = .standard
+        violenceLevelRaw = ViolenceLevel.standard.rawValue
         soundsEnabled = true
         soundVolume = 0.7
-        soundPack = .classic
+        masterVolume = 0.8
+        soundPackRaw = "default"
         particlesEnabled = true
         screenShakeEnabled = true
         matrixBackgroundEnabled = false
         glitchTextEnabled = true
-        themeVariant = .neon
+        themeVariantRaw = "neon"
 
         // Emit settings changed event
         TaskDestroyerEventBus.shared.emit(.settingsChanged)
