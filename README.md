@@ -1,5 +1,7 @@
 # SimpleKanban
 
+![AGILE9000 TaskDestroyer Mode](agile9000-banner.gif)
+
 > **SHIPS WITH [AGILE9000](https://agile9000.org) TASKDESTROYER MODE**
 >
 > Are you TIRED of your backlog? Do tasks MOCK YOU with their continued existence? SimpleKanban now includes **TaskDestroyer9000** -- a dark-mode overlay that turns task completion into a VISCERAL EXPERIENCE. Exploding particles. Screaming airhorns when you try to create meetings. Shame timers that make old tasks WIGGLE WITH GUILT. Cards literally DECOMPOSE if you ignore them long enough.
