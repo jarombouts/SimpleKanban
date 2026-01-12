@@ -30,7 +30,7 @@ jobs:
         run: |
           xcodebuild build \
             -project SimpleKanban.xcodeproj \
-            -scheme SimpleKanban \
+            -scheme SimpleKanbanMacOS \
             -destination 'platform=macOS' \
             -quiet
 
@@ -38,7 +38,7 @@ jobs:
         run: |
           xcodebuild test \
             -project SimpleKanban.xcodeproj \
-            -scheme SimpleKanban \
+            -scheme SimpleKanbanMacOS \
             -destination 'platform=macOS' \
             -resultBundlePath TestResults.xcresult \
             | xcpretty --color
