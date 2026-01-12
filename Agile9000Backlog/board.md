@@ -1,5 +1,5 @@
 ---
-title: TaskDestroyer9000 Kanban Board
+title: con
 columns:
   - id: todo
     name: TODO

@@ -245,8 +245,9 @@ public final class TaskDestroyerSettings: ObservableObject {
             return violenceLevel.todoColumnName()
         }
 
-        // Match "In Progress" variants
-        if lowerId == "in-progress" || lowerId == "inprogress" || lowerName.contains("progress") {
+        // Match "In Progress" / "Doing" variants
+        if lowerId == "in-progress" || lowerId == "inprogress" || lowerId == "doing" ||
+           lowerName.contains("progress") || lowerName == "doing" {
             return violenceLevel.inProgressColumnName()
         }
 
