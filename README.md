@@ -27,6 +27,12 @@ Most Kanban tools lock your data in proprietary formats or cloud services. Simpl
 - **No dependencies** -- Pure Swift/SwiftUI, no external libraries
 - **Multi-platform** -- macOS with git sync, iPad with iCloud sync
 
+### TaskDestroyer in Action
+
+![TaskDestroyer MAX CRAZY MODE](taskdestroyer-demo.gif)
+
+*Completing a task in MAX CRAZY MODE. Your backlog has never feared you more.*
+
 ## Installation
 
 Download the latest release from the [Releases page](https://github.com/jarombouts/SimpleKanban/releases), or build from source:
