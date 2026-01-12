@@ -213,15 +213,16 @@ struct IOSBoardView: View {
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
-                // TaskDestroyer: Theme background
-                themeBackgroundColor.ignoresSafeArea()
-
-                // Matrix rain background when TaskDestroyer is enabled
-                if destroyerSettings.enabled && destroyerSettings.matrixBackgroundEnabled {
-                    MatrixRainView(enabled: true)
-                        .opacity(0.15)
-                        .allowsHitTesting(false)
-                }
+                // TaskDestroyer: Theme background with matrix rain overlay
+                // Using .background() ensures MatrixRainView gets proper sizing from GeometryReader
+                themeBackgroundColor
+                    .ignoresSafeArea()
+                    .overlay {
+                        if destroyerSettings.enabled && destroyerSettings.matrixBackgroundEnabled {
+                            MatrixRainView(enabled: true, opacity: 0.6, columnCount: 25)
+                                .allowsHitTesting(false)
+                        }
+                    }
 
                 // Invisible drop target behind everything to catch cancelled drags
                 // This ensures draggingCardTitle is reset if drop fails
@@ -940,7 +941,8 @@ struct IOSColumnView: View {
 
     /// Column background color based on theme
     private var columnBackgroundColor: Color {
-        destroyerSettings.enabled ? TaskDestroyerColors.darkMatter : Color(uiColor: .systemGroupedBackground)
+        // Heavy transparency in TaskDestroyer mode so matrix rain shows through
+        destroyerSettings.enabled ? TaskDestroyerColors.darkMatter.opacity(0.15) : Color(uiColor: .systemGroupedBackground)
     }
 
     /// Column header background based on theme
@@ -1174,7 +1176,8 @@ struct IOSCardView: View {
 
     /// Card background color based on theme
     private var cardBackgroundColor: Color {
-        destroyerSettings.enabled ? TaskDestroyerColors.cardBackground : Color(uiColor: .secondarySystemBackground)
+        // Heavy transparency in TaskDestroyer mode so matrix rain shows through
+        destroyerSettings.enabled ? TaskDestroyerColors.cardBackground.opacity(0.25) : Color(uiColor: .secondarySystemBackground)
     }
 
     /// Primary text color based on theme

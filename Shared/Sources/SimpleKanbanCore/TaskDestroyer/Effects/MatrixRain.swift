@@ -62,7 +62,9 @@ public struct MatrixRainView: View {
             )
             .opacity(opacity)
         }
-        .drawingGroup() // Rasterize for GPU acceleration
+        #if os(macOS)
+        .drawingGroup() // Rasterize for GPU acceleration (macOS only - causes issues on iOS)
+        #endif
     }
 }
 
@@ -219,11 +221,13 @@ private final class MatrixCharacterCache {
         ]
 
         let size: CGSize = CGSize(width: imageSize, height: imageSize)
-        let format: UIGraphicsImageRendererFormat = UIGraphicsImageRendererFormat()
+        let format: UIGraphicsImageRendererFormat = UIGraphicsImageRendererFormat.default()
+        // Use scale 1.0 for consistent CGImage sizing (we handle display scale in SwiftUI)
         format.scale = 1.0
+        format.opaque = false
         let renderer: UIGraphicsImageRenderer = UIGraphicsImageRenderer(size: size, format: format)
 
-        let image: UIImage = renderer.image { context in
+        let image: UIImage = renderer.image { _ in
             let attrString: NSAttributedString = NSAttributedString(string: string, attributes: attributes)
             let stringSize: CGSize = attrString.size()
             let point: CGPoint = CGPoint(
@@ -282,9 +286,19 @@ private struct MatrixRainCanvasInner: View {
 
     @State private var columns: [MatrixColumn] = []
     @State private var lastUpdate: Date = Date()
-    @State private var isInitialized: Bool = false
+    @State private var initializedSize: CGSize = .zero
 
     private let cache: MatrixCharacterCache = MatrixCharacterCache.shared
+
+    /// Check if we need to reinitialize due to significant size change
+    private var needsReinitialize: Bool {
+        // If never initialized, definitely need to
+        guard initializedSize != .zero else { return true }
+        // Reinitialize if size changed by more than 100pt in either dimension
+        let widthDelta: CGFloat = abs(size.width - initializedSize.width)
+        let heightDelta: CGFloat = abs(size.height - initializedSize.height)
+        return widthDelta > 100 || heightDelta > 100
+    }
 
     var body: some View {
         Canvas { context, canvasSize in
@@ -296,12 +310,17 @@ private struct MatrixRainCanvasInner: View {
             }
         }
         .onAppear {
-            if !isInitialized {
+            if needsReinitialize && size.width > 0 && size.height > 0 {
                 initializeColumns()
-                isInitialized = true
             }
         }
-        .onChange(of: date) { newDate in
+        .onChange(of: size) { _, newSize in
+            // Reinitialize if size changed significantly (e.g., rotation, initial layout)
+            if needsReinitialize && newSize.width > 0 && newSize.height > 0 {
+                initializeColumns()
+            }
+        }
+        .onChange(of: date) { _, newDate in
             updateColumns(at: newDate)
         }
     }
@@ -334,6 +353,7 @@ private struct MatrixRainCanvasInner: View {
             )
         }
         lastUpdate = Date()
+        initializedSize = size
     }
 
     /// Update column positions based on time delta
