@@ -52,6 +52,12 @@ public final class KonamiCodeDetector: ObservableObject {
     /// Timeout duration - sequence resets if not completed in time.
     private let timeout: TimeInterval = 10.0
 
+    /// Cooldown between activations (so you can trigger it again after effects finish).
+    private let activationCooldown: TimeInterval = 3.0
+
+    /// Time of last activation.
+    private var lastActivationTime: Date = Date.distantPast
+
     private init() {}
 
     // MARK: - Input Types
@@ -130,8 +136,10 @@ public final class KonamiCodeDetector: ObservableObject {
         // Always reset index to prevent array out of bounds on re-entry
         currentIndex = 0
 
-        // Only fire effects once per session
-        guard !isActivated else { return }
+        // Cooldown check - prevent spamming the activation
+        let now: Date = Date()
+        guard now.timeIntervalSince(lastActivationTime) > activationCooldown else { return }
+        lastActivationTime = now
 
         isActivated = true
         progress = sequence.count
@@ -188,15 +196,44 @@ class KonamiKeyView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    /// Store the event monitor so we can remove it later.
+    private var eventMonitor: Any?
+
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
+
+        // Remove any existing monitor first to avoid duplicates
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+
+        // Only add monitor if we're actually in a window
+        guard window != nil else { return }
+
         // Add local event monitor for key events
         // This catches keys even when other views have focus
-        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if self?.handleKeyEvent(event) == true {
                 return nil  // Consume the event
             }
             return event  // Let it propagate
+        }
+    }
+
+    override func removeFromSuperview() {
+        // Clean up the event monitor when view is removed
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
+            eventMonitor = nil
+        }
+        super.removeFromSuperview()
+    }
+
+    deinit {
+        // Belt and suspenders - also clean up on dealloc
+        if let monitor = eventMonitor {
+            NSEvent.removeMonitor(monitor)
         }
     }
 

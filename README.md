@@ -25,13 +25,13 @@ Most Kanban tools lock your data in proprietary formats or cloud services. Simpl
 - **Git-friendly** -- One file per card means minimal merge conflicts when collaborating
 - **No cloud required** -- Everything lives in a folder you control
 - **No dependencies** -- Pure Swift/SwiftUI, no external libraries
-- **Multi-platform** -- macOS with git sync, iPad with iCloud sync
+- **Multi-platform** -- macOS with git sync, iPad with iCloud sync, file format so simple even an arduino could work with it
 
 ### TaskDestroyer in Action
 
 ![TaskDestroyer MAX CRAZY MODE](taskdestroyer-demo.gif)
 
-*Completing a task in MAX CRAZY MODE. Your backlog has never feared you more.*
+*Your backlog has never feared you more.*
 
 ## Installation
 
