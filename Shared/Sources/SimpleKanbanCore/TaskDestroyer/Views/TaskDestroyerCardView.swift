@@ -272,7 +272,11 @@ public struct ThemedCardView: View {
             }
         }
         .padding(12)
-        .background(Color(.textBackgroundColor))
+        #if os(macOS)
+        .background(Color(nsColor: .textBackgroundColor))
+        #else
+        .background(Color(uiColor: .secondarySystemBackground))
+        #endif
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)

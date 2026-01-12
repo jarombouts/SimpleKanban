@@ -14,6 +14,18 @@
 import SwiftUI
 import SimpleKanbanCore
 
+// MARK: - PendingMeetingCard
+
+/// Data for a card pending meeting warning approval.
+/// Identifiable so it works with sheet(item:) pattern.
+struct PendingMeetingCard: Identifiable {
+    let id: UUID = UUID()
+    let title: String
+    let column: String
+    let body: String
+    let labels: [String]
+}
+
 // MARK: - Welcome View
 
 /// Welcome screen shown when no board is open.
@@ -134,6 +146,19 @@ struct IOSBoardView: View {
     /// Environment undo manager for Edit menu integration and shake-to-undo
     @Environment(\.undoManager) private var undoManager
 
+    // MARK: - TaskDestroyer State
+
+    /// TaskDestroyer settings for theme and effects
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    /// Pending card creation data when meeting warning is shown
+    @State private var pendingMeetingCard: PendingMeetingCard? = nil
+
+    /// Whether to show the Jira Purge ceremony
+    @State private var showJiraPurge: Bool = false
+
+    // MARK: - Selection State
+
     /// Currently selected card titles (for multi-select)
     @State private var selectedCardTitles: Set<String> = []
 
@@ -180,9 +205,24 @@ struct IOSBoardView: View {
     /// Collapsed columns (by column ID) - persists within session
     @State private var collapsedColumns: Set<String> = []
 
+    /// Background color based on current theme mode
+    private var themeBackgroundColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.void : Color(uiColor: .systemBackground)
+    }
+
     var body: some View {
         NavigationStack {
             ZStack(alignment: .bottom) {
+                // TaskDestroyer: Theme background
+                themeBackgroundColor.ignoresSafeArea()
+
+                // Matrix rain background when TaskDestroyer is enabled
+                if destroyerSettings.enabled && destroyerSettings.matrixBackgroundEnabled {
+                    MatrixRainView(enabled: true)
+                        .opacity(0.15)
+                        .allowsHitTesting(false)
+                }
+
                 // Invisible drop target behind everything to catch cancelled drags
                 // This ensures draggingCardTitle is reset if drop fails
                 Color.clear
@@ -369,6 +409,21 @@ struct IOSBoardView: View {
                             Image(systemName: store.showArchive ? "archivebox.fill" : "archivebox")
                         }
 
+                        // TaskDestroyer: Streak display (when enabled)
+                        if destroyerSettings.enabled {
+                            StreakDisplayView()
+
+                            // Jira Purge button
+                            Button {
+                                showJiraPurge = true
+                            } label: {
+                                Image(systemName: "flame.circle")
+                            }
+                        }
+
+                        // TaskDestroyer mode toggle
+                        ModeToggleButton()
+
                         // Settings gear
                         Button {
                             showBoardSettings = true
@@ -458,6 +513,29 @@ struct IOSBoardView: View {
             .focusable()
             .onKeyPress { press in
                 handleKeyPress(press)
+            }
+            // TaskDestroyer: Jira Purge ceremony
+            .sheet(isPresented: $showJiraPurge) {
+                let oldTasks: [Card] = store.cards.filter { $0.isEligibleForPurge }
+                JiraPurgeView(
+                    oldTasks: oldTasks,
+                    onDelete: { card in
+                        try? store.deleteCards([card])
+                    }
+                )
+            }
+            // TaskDestroyer: Particle overlay for effects
+            .overlay {
+                if destroyerSettings.enabled && destroyerSettings.particlesEnabled {
+                    ParticleOverlayView()
+                        .allowsHitTesting(false)
+                }
+            }
+            // TaskDestroyer: Floating text overlay
+            .overlay {
+                if destroyerSettings.enabled {
+                    FloatingTextOverlay()
+                }
             }
         }
     }
@@ -857,6 +935,29 @@ struct IOSColumnView: View {
     /// Height of the gap to show when dragging (matches approximate card height)
     private let dropGapHeight: CGFloat = 70
 
+    /// TaskDestroyer settings for theme-aware styling
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    /// Column background color based on theme
+    private var columnBackgroundColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.darkMatter : Color(uiColor: .systemGroupedBackground)
+    }
+
+    /// Column header background based on theme
+    private var headerBackgroundColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.elevated : Color(uiColor: .secondarySystemGroupedBackground)
+    }
+
+    /// Primary text color based on theme
+    private var primaryTextColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.textPrimary : .primary
+    }
+
+    /// Secondary text color based on theme
+    private var secondaryTextColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.textSecondary : .secondary
+    }
+
     /// Deduplicates cards by title to prevent ForEach crashes from duplicate IDs.
     /// This is a defensive measure - titles should be unique, but during drag operations
     /// or data corruption, duplicates may temporarily exist.
@@ -878,31 +979,33 @@ struct IOSColumnView: View {
                 // Collapse/expand chevron
                 Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(secondaryTextColor)
                     .frame(width: 16)
 
                 Text(column.name)
-                    .font(.headline)
+                    .font(destroyerSettings.enabled ? TaskDestroyerTypography.heading : .headline)
+                    .foregroundColor(primaryTextColor)
 
                 Spacer()
 
                 Text("\(cards.count)")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .font(destroyerSettings.enabled ? TaskDestroyerTypography.caption : .subheadline)
+                    .foregroundStyle(secondaryTextColor)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background(.quaternary, in: Capsule())
+                    .background(destroyerSettings.enabled ? TaskDestroyerColors.border : Color.secondary.opacity(0.2), in: Capsule())
 
                 if !isSelectionMode && !isCollapsed {
                     Button(action: onAddCard) {
                         Image(systemName: "plus")
                     }
                     .buttonStyle(.bordered)
+                    .tint(destroyerSettings.enabled ? TaskDestroyerColors.primary : nil)
                     .controlSize(.small)
                 }
             }
             .padding()
-            .background(.regularMaterial)
+            .background(headerBackgroundColor)
             .contentShape(Rectangle())
             .onTapGesture {
                 onToggleCollapse()
@@ -918,10 +1021,10 @@ struct IOSColumnView: View {
                         VStack(spacing: 8) {
                             Image(systemName: "plus.rectangle.on.rectangle")
                                 .font(.system(size: 24))
-                                .foregroundStyle(.tertiary)
+                                .foregroundColor(destroyerSettings.enabled ? TaskDestroyerColors.textMuted : Color.gray.opacity(0.4))
                             Text("No cards yet")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
+                                .font(destroyerSettings.enabled ? TaskDestroyerTypography.caption : .caption)
+                                .foregroundStyle(secondaryTextColor)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 24)
@@ -973,12 +1076,17 @@ struct IOSColumnView: View {
             } // End of if !isCollapsed
         }
         .frame(width: isCollapsed ? 60 : columnWidth)
-        .background(Color(.systemGroupedBackground))
+        .background(columnBackgroundColor)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
-            // Visual highlight when column is drop target
+            // Visual highlight when column is drop target or neon border in TaskDestroyer mode
             RoundedRectangle(cornerRadius: 12)
-                .stroke(isColumnTargeted ? Color.accentColor.opacity(0.5) : Color.clear, lineWidth: 2)
+                .stroke(
+                    isColumnTargeted
+                        ? (destroyerSettings.enabled ? TaskDestroyerColors.primary : Color.accentColor).opacity(0.5)
+                        : (destroyerSettings.enabled ? TaskDestroyerColors.border : Color.clear),
+                    lineWidth: isColumnTargeted ? 2 : (destroyerSettings.enabled ? 1 : 0)
+                )
         )
     }
 }
@@ -1003,21 +1111,113 @@ struct IOSCardView: View {
     /// Whether to show the drag handle (hidden in previews/drag states)
     var showDragHandle: Bool = true
 
+    /// TaskDestroyer settings for theme-aware styling
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    /// Vibration offset for rapid jittery movement (TaskDestroyer)
+    @State private var vibrationOffset: CGSize = .zero
+
+    /// Border glow intensity for pulsing (TaskDestroyer)
+    @State private var glowIntensity: Double = 0.4
+
+    /// Shame level for TaskDestroyer mode
+    private var shameLevel: ShameLevel {
+        ShameLevel.from(created: card.created)
+    }
+
+    /// Whether this card should have menacing animations
+    private var shouldAnimate: Bool {
+        destroyerSettings.enabled &&
+        destroyerSettings.cardAnimationsEnabled &&
+        (shameLevel == .stale || shameLevel == .rotting || shameLevel == .decomposing)
+    }
+
+    /// Vibration amplitude in points - how much the card jitters
+    private var vibrationAmplitude: CGFloat {
+        let violenceMultiplier: CGFloat = CGFloat(destroyerSettings.violenceLevel.animationMultiplier)
+        switch shameLevel {
+        case .fresh, .normal:
+            return 0
+        case .stale:
+            return 0.3 * violenceMultiplier
+        case .rotting:
+            return 0.8 * violenceMultiplier
+        case .decomposing:
+            return 1.5 * violenceMultiplier
+        }
+    }
+
+    /// Glow color for shadow effects
+    private var glowColor: Color {
+        isSelected ? TaskDestroyerColors.primaryGlow : borderColor
+    }
+
+    /// Border color based on shame level (TaskDestroyer) or selection state (standard)
+    private var borderColor: Color {
+        guard destroyerSettings.enabled else {
+            return isSelected ? Color.accentColor : .clear
+        }
+        if isSelected {
+            return TaskDestroyerColors.primary
+        }
+        switch shameLevel {
+        case .fresh, .normal:
+            return TaskDestroyerColors.border
+        case .stale:
+            return TaskDestroyerColors.warning.opacity(0.6)
+        case .rotting:
+            return TaskDestroyerColors.danger.opacity(0.8)
+        case .decomposing:
+            return TaskDestroyerColors.danger
+        }
+    }
+
+    /// Card background color based on theme
+    private var cardBackgroundColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.cardBackground : Color(uiColor: .secondarySystemBackground)
+    }
+
+    /// Primary text color based on theme
+    private var primaryTextColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.textPrimary : .primary
+    }
+
+    /// Secondary text color based on theme
+    private var secondaryTextColor: Color {
+        destroyerSettings.enabled ? TaskDestroyerColors.textSecondary : .secondary
+    }
+
     var body: some View {
+        // Only animating cards get TimelineView - others have zero overhead
+        if shouldAnimate {
+            TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+                cardContent
+                    .onChange(of: timeline.date) { _, _ in
+                        updateVibration()
+                    }
+            }
+        } else {
+            cardContent
+        }
+    }
+
+    /// The actual card content (used by both animated and non-animated paths)
+    private var cardContent: some View {
         HStack(spacing: 8) {
             // Selection checkmark (shown in selection mode)
             if isSelectionMode {
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
-                    .foregroundStyle(isSelected ? Color.accentColor : .secondary)
+                    .foregroundStyle(isSelected ? (destroyerSettings.enabled ? TaskDestroyerColors.primary : Color.accentColor) : secondaryTextColor)
             }
 
             // Card content
             VStack(alignment: .leading, spacing: 6) {
                 // 1. Title
                 Text(card.title)
-                    .font(.subheadline)
+                    .font(destroyerSettings.enabled ? TaskDestroyerTypography.subheading : .subheadline)
                     .fontWeight(.medium)
+                    .foregroundColor(shameLevel == .decomposing && destroyerSettings.enabled ? TaskDestroyerColors.danger : primaryTextColor)
                     .lineLimit(2)
 
                 // 2. Body snippet (first non-header line, matching macOS)
@@ -1029,8 +1229,8 @@ struct IOSCardView: View {
 
                     if !firstLine.isEmpty {
                         Text(firstLine)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(destroyerSettings.enabled ? TaskDestroyerTypography.caption : .caption)
+                            .foregroundStyle(secondaryTextColor)
                             .lineLimit(1)
                     }
                 }
@@ -1040,15 +1240,29 @@ struct IOSCardView: View {
                     HStack(spacing: 4) {
                         ForEach(card.labels, id: \.self) { labelID in
                             if let label = labels.first(where: { $0.id == labelID }) {
-                                Text(label.name)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background((Color(hex: label.color) ?? .gray).opacity(0.2))
-                                    .foregroundStyle(Color(hex: label.color) ?? .gray)
-                                    .clipShape(Capsule())
+                                if destroyerSettings.enabled {
+                                    // TaskDestroyer neon label style
+                                    TaskDestroyerLabelPill(label: label)
+                                } else {
+                                    // Standard label style
+                                    Text(label.name)
+                                        .font(.system(size: 10, weight: .medium))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background((Color(hex: label.color) ?? .gray).opacity(0.2))
+                                        .foregroundStyle(Color(hex: label.color) ?? .gray)
+                                        .clipShape(Capsule())
+                                }
                             }
                         }
+                    }
+                }
+
+                // 4. Shame timer (TaskDestroyer only)
+                if destroyerSettings.enabled {
+                    HStack {
+                        Spacer()
+                        CompactShameTimerView(createdDate: card.created)
                     }
                 }
             }
@@ -1060,20 +1274,55 @@ struct IOSCardView: View {
             if showDragHandle && !isSelectionMode {
                 Image(systemName: "line.3.horizontal")
                     .font(.body)
-                    .foregroundStyle(.tertiary)
+                    .foregroundColor(destroyerSettings.enabled ? TaskDestroyerColors.textMuted : Color.gray.opacity(0.4))
                     .frame(width: 24)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(.background)
+        .background(
+            ZStack {
+                cardBackgroundColor
+                // Danger overlay for rotting/decomposing tasks
+                if destroyerSettings.enabled {
+                    (shameLevel == .decomposing ? TaskDestroyerColors.danger.opacity(0.1) :
+                     shameLevel == .rotting ? TaskDestroyerColors.danger.opacity(0.05) : Color.clear)
+                }
+            }
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
-        .shadow(color: .black.opacity(0.1), radius: 2, y: 1)
+        // Glow shadow for TaskDestroyer animated cards
+        .shadow(
+            color: shouldAnimate ? glowColor.opacity(glowIntensity) : (destroyerSettings.enabled ? .clear : .black.opacity(0.1)),
+            radius: shouldAnimate ? 8 : 2,
+            y: destroyerSettings.enabled ? 0 : 1
+        )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(isSelected ? Color.accentColor : .clear, lineWidth: 2)
+                .stroke(borderColor, lineWidth: isSelected ? 2 : (destroyerSettings.enabled ? 1 : 0))
         )
+        .offset(vibrationOffset)  // Apply vibration offset for wiggle effect
         .opacity(isDragging ? 0.5 : 1.0)
+        .onAppear {
+            initializeMenacingState()
+        }
+    }
+
+    /// Initialize animation state on appear
+    private func initializeMenacingState() {
+        guard shouldAnimate else { return }
+        glowIntensity = shameLevel == .decomposing ? 0.7 : 0.5
+    }
+
+    /// Update vibration offset for wiggle effect
+    private func updateVibration() {
+        let amplitude: CGFloat = vibrationAmplitude
+        guard amplitude > 0 else { return }
+
+        vibrationOffset = CGSize(
+            width: CGFloat.random(in: -amplitude...amplitude),
+            height: CGFloat.random(in: -amplitude...amplitude)
+        )
     }
 }
 
@@ -2602,13 +2851,25 @@ struct IOSNewCardView: View {
     let onDismiss: () -> Void
 
     @State private var title: String = ""
+    @State private var cardBody: String = ""
     @State private var errorMessage: String? = nil
+
+    /// TaskDestroyer settings for meeting detection
+    @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
+
+    /// Whether to show the meeting warning modal
+    @State private var showMeetingWarning: Bool = false
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Title") {
                     TextField("Card title", text: $title)
+                }
+
+                Section("Description") {
+                    TextEditor(text: $cardBody)
+                        .frame(minHeight: 100)
                 }
 
                 if let error = errorMessage {
@@ -2633,12 +2894,37 @@ struct IOSNewCardView: View {
                     .disabled(title.isEmpty)
                 }
             }
+            // TaskDestroyer: Meeting warning modal
+            .sheet(isPresented: $showMeetingWarning) {
+                MeetingWarningModal(
+                    taskTitle: title,
+                    onConfirm: {
+                        // User wants to create the meeting task anyway
+                        forceCreateCard()
+                        showMeetingWarning = false
+                    },
+                    onCancel: {
+                        // User cancelled
+                        showMeetingWarning = false
+                    }
+                )
+            }
         }
     }
 
     private func createCard() {
+        // TaskDestroyer: Check for meeting keywords
+        if destroyerSettings.enabled && MeetingDetector.containsMeetingKeyword(title) {
+            showMeetingWarning = true
+            return
+        }
+
+        forceCreateCard()
+    }
+
+    private func forceCreateCard() {
         do {
-            try store.addCard(title: title, toColumn: columnID)
+            try store.addCard(title: title, toColumn: columnID, body: cardBody)
             onDismiss()
         } catch {
             errorMessage = error.localizedDescription

@@ -230,7 +230,11 @@ public final class ThemeManager: ObservableObject {
     /// Background color
     public var backgroundColor: Color {
         guard isTaskDestroyerMode else {
+            #if os(macOS)
             return Color(nsColor: .windowBackgroundColor)
+            #else
+            return Color(uiColor: .systemBackground)
+            #endif
         }
         return TaskDestroyerColors.void
     }
@@ -238,7 +242,11 @@ public final class ThemeManager: ObservableObject {
     /// Card background color
     public var cardBackgroundColor: Color {
         guard isTaskDestroyerMode else {
+            #if os(macOS)
             return Color(nsColor: .controlBackgroundColor)
+            #else
+            return Color(uiColor: .secondarySystemBackground)
+            #endif
         }
         return TaskDestroyerColors.cardBackground
     }

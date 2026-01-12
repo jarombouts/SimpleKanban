@@ -8,8 +8,10 @@
 // creating thousands of Text views per frame. Much faster than SwiftUI Text.
 
 import SwiftUI
-#if canImport(AppKit)
+#if os(macOS)
 import AppKit
+#else
+import UIKit
 #endif
 
 // MARK: - Matrix Rain View
@@ -135,7 +137,7 @@ private final class MatrixCharacterCache {
 
     /// Pre-render all characters at all opacity levels for all depth tiers
     private func prerenderCharacters() {
-        #if canImport(AppKit)
+        #if os(macOS)
         let green: NSColor = NSColor(red: 0.0, green: 1.0, blue: 0.4, alpha: 1.0)
         let white: NSColor = NSColor.white
 
@@ -147,13 +149,37 @@ private final class MatrixCharacterCache {
                 // Green versions at different opacities
                 for opacity in opacityLevels {
                     let key: String = "\(char)_g_\(Int(opacity * 100))_t\(tier.rawValue)"
-                    if let image = renderCharacter(char, font: font, color: green.withAlphaComponent(opacity), imageSize: imageSize) {
+                    if let image = renderCharacterMac(char, font: font, color: green.withAlphaComponent(opacity), imageSize: imageSize) {
                         cache[key] = image
                     }
                 }
                 // White version (for head of trail)
                 let whiteKey: String = "\(char)_w_t\(tier.rawValue)"
-                if let image = renderCharacter(char, font: font, color: white, imageSize: imageSize) {
+                if let image = renderCharacterMac(char, font: font, color: white, imageSize: imageSize) {
+                    cache[whiteKey] = image
+                }
+            }
+        }
+        #else
+        // iOS / iPadOS
+        let green: UIColor = UIColor(red: 0.0, green: 1.0, blue: 0.4, alpha: 1.0)
+        let white: UIColor = UIColor.white
+
+        for tier in MatrixDepthTier.allCases {
+            let font: UIFont = UIFont.monospacedSystemFont(ofSize: tier.fontSize, weight: .regular)
+            let imageSize: CGFloat = tier.imageSize
+
+            for char in characters {
+                // Green versions at different opacities
+                for opacity in opacityLevels {
+                    let key: String = "\(char)_g_\(Int(opacity * 100))_t\(tier.rawValue)"
+                    if let image = renderCharacterIOS(char, font: font, color: green.withAlphaComponent(opacity), imageSize: imageSize) {
+                        cache[key] = image
+                    }
+                }
+                // White version (for head of trail)
+                let whiteKey: String = "\(char)_w_t\(tier.rawValue)"
+                if let image = renderCharacterIOS(char, font: font, color: white, imageSize: imageSize) {
                     cache[whiteKey] = image
                 }
             }
@@ -161,8 +187,8 @@ private final class MatrixCharacterCache {
         #endif
     }
 
-    #if canImport(AppKit)
-    private func renderCharacter(_ char: Character, font: NSFont, color: NSColor, imageSize: CGFloat) -> CGImage? {
+    #if os(macOS)
+    private func renderCharacterMac(_ char: Character, font: NSFont, color: NSColor, imageSize: CGFloat) -> CGImage? {
         let string: String = String(char)
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -183,6 +209,31 @@ private final class MatrixCharacterCache {
 
         var rect: CGRect = CGRect(origin: .zero, size: size)
         return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }
+    #else
+    private func renderCharacterIOS(_ char: Character, font: UIFont, color: UIColor, imageSize: CGFloat) -> CGImage? {
+        let string: String = String(char)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+
+        let size: CGSize = CGSize(width: imageSize, height: imageSize)
+        let format: UIGraphicsImageRendererFormat = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let renderer: UIGraphicsImageRenderer = UIGraphicsImageRenderer(size: size, format: format)
+
+        let image: UIImage = renderer.image { context in
+            let attrString: NSAttributedString = NSAttributedString(string: string, attributes: attributes)
+            let stringSize: CGSize = attrString.size()
+            let point: CGPoint = CGPoint(
+                x: (size.width - stringSize.width) / 2,
+                y: (size.height - stringSize.height) / 2
+            )
+            attrString.draw(at: point)
+        }
+
+        return image.cgImage
     }
     #endif
 

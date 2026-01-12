@@ -1,5 +1,13 @@
 # SimpleKanban
 
+> **SHIPS WITH [AGILE9000](https://agile9000.org) TASKDESTROYER MODE**
+>
+> Are you TIRED of your backlog? Do tasks MOCK YOU with their continued existence? SimpleKanban now includes **TaskDestroyer9000** -- a dark-mode overlay that turns task completion into a VISCERAL EXPERIENCE. Exploding particles. Screaming airhorns when you try to create meetings. Shame timers that make old tasks WIGGLE WITH GUILT. Cards literally DECOMPOSE if you ignore them long enough.
+>
+> Because shipping code should feel like VICTORY, not another checkbox. **[Read the AGILE9000 Manifesto](https://agile9000.org)** and join the revolution against process theater.
+
+---
+
 A native macOS/iOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
