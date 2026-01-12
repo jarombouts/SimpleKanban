@@ -1,9 +1,9 @@
 ---
-title: Add smoke effect for decomposing tasks
+title: "Add smoke effect for decomposing tasks "
 column: todo
-position: zi
-created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+position: t
+created: 2026-01-11T06:49:33Z
+modified: 2026-01-12T10:01:58Z
 labels: [phase-5, fx, shared]
 ---
 

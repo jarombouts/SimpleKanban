@@ -1,9 +1,9 @@
 ---
 title: Implement default column rename
-column: todo
+column: done
 position: zk
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-10T14:35:00Z
 labels: [phase-5, ui, shared]
 ---
 

@@ -4,11 +4,13 @@
 // "Do you see the code? All I see is blonde, brunette, redhead..."
 // - Cypher, before he betrayed everyone
 //
-// This is meant to be a subtle background effect, not the main show.
-// Keep it low opacity, low frame rate, and easy on the GPU.
+// PERF NOTE: Pre-renders characters to CGImages at startup to avoid
+// creating thousands of Text views per frame. Much faster than SwiftUI Text.
 
-import Combine
 import SwiftUI
+#if canImport(AppKit)
+import AppKit
+#endif
 
 // MARK: - Matrix Rain View
 
@@ -58,13 +60,149 @@ public struct MatrixRainView: View {
             )
             .opacity(opacity)
         }
-        .drawingGroup() // Optimize for performance
+        .drawingGroup() // Rasterize for GPU acceleration
     }
+}
+
+// MARK: - Depth Tiers
+
+/// Depth tiers for parallax effect - smaller chars appear further away
+enum MatrixDepthTier: Int, CaseIterable {
+    case far = 0      // Small, slow, dim
+    case mid = 1      // Medium
+    case near = 2     // Large, fast, bright
+
+    var fontSize: CGFloat {
+        switch self {
+        case .far: return 10
+        case .mid: return 14
+        case .near: return 18
+        }
+    }
+
+    var imageSize: CGFloat {
+        switch self {
+        case .far: return 14
+        case .mid: return 18
+        case .near: return 24
+        }
+    }
+
+    /// Step height for vertical spacing (slightly more than image size for breathing room)
+    var stepHeight: CGFloat {
+        switch self {
+        case .far: return 16
+        case .mid: return 22
+        case .near: return 28
+        }
+    }
+
+    /// Speed range in pixels per second
+    var speedRange: ClosedRange<CGFloat> {
+        switch self {
+        case .far: return 15...40     // Crawling background
+        case .mid: return 60...120    // Medium
+        case .near: return 140...280  // Zooming foreground
+        }
+    }
+
+    /// Base opacity multiplier (far things are dimmer)
+    var opacityMultiplier: Double {
+        switch self {
+        case .far: return 0.5
+        case .mid: return 0.75
+        case .near: return 1.0
+        }
+    }
+}
+
+// MARK: - Character Cache
+
+/// Pre-rendered character images for fast drawing.
+/// Creating Text views is expensive - pre-rendering to CGImage is much faster.
+/// Now renders at multiple sizes for depth/parallax effect.
+private final class MatrixCharacterCache {
+    static let shared: MatrixCharacterCache = MatrixCharacterCache()
+
+    private var cache: [String: CGImage] = [:]
+    // Full character set for authentic Matrix look
+    private let characters: [Character] = Array("01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン日月火水木金土ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ012345789Z")
+    private let opacityLevels: [Double] = [0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95, 1.0]
+
+    private init() {
+        prerenderCharacters()
+    }
+
+    /// Pre-render all characters at all opacity levels for all depth tiers
+    private func prerenderCharacters() {
+        #if canImport(AppKit)
+        let green: NSColor = NSColor(red: 0.0, green: 1.0, blue: 0.4, alpha: 1.0)
+        let white: NSColor = NSColor.white
+
+        for tier in MatrixDepthTier.allCases {
+            let font: NSFont = NSFont.monospacedSystemFont(ofSize: tier.fontSize, weight: .regular)
+            let imageSize: CGFloat = tier.imageSize
+
+            for char in characters {
+                // Green versions at different opacities
+                for opacity in opacityLevels {
+                    let key: String = "\(char)_g_\(Int(opacity * 100))_t\(tier.rawValue)"
+                    if let image = renderCharacter(char, font: font, color: green.withAlphaComponent(opacity), imageSize: imageSize) {
+                        cache[key] = image
+                    }
+                }
+                // White version (for head of trail)
+                let whiteKey: String = "\(char)_w_t\(tier.rawValue)"
+                if let image = renderCharacter(char, font: font, color: white, imageSize: imageSize) {
+                    cache[whiteKey] = image
+                }
+            }
+        }
+        #endif
+    }
+
+    #if canImport(AppKit)
+    private func renderCharacter(_ char: Character, font: NSFont, color: NSColor, imageSize: CGFloat) -> CGImage? {
+        let string: String = String(char)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+
+        let size: CGSize = CGSize(width: imageSize, height: imageSize)
+        let image: NSImage = NSImage(size: size, flipped: false) { rect in
+            let attrString: NSAttributedString = NSAttributedString(string: string, attributes: attributes)
+            let stringSize: CGSize = attrString.size()
+            let point: CGPoint = CGPoint(
+                x: (rect.width - stringSize.width) / 2,
+                y: (rect.height - stringSize.height) / 2
+            )
+            attrString.draw(at: point)
+            return true
+        }
+
+        var rect: CGRect = CGRect(origin: .zero, size: size)
+        return image.cgImage(forProposedRect: &rect, context: nil, hints: nil)
+    }
+    #endif
+
+    /// Get a pre-rendered character image for the given depth tier
+    func getImage(char: Character, isHead: Bool, opacity: Double, tier: MatrixDepthTier) -> CGImage? {
+        if isHead {
+            return cache["\(char)_w_t\(tier.rawValue)"]
+        }
+        // Quantize opacity to nearest level
+        let quantized: Double = opacityLevels.min(by: { abs($0 - opacity) < abs($1 - opacity) }) ?? 0.5
+        return cache["\(char)_g_\(Int(quantized * 100))_t\(tier.rawValue)"]
+    }
+
+    var allCharacters: [Character] { characters }
 }
 
 // MARK: - Matrix Rain Canvas
 
 /// The actual canvas that renders the falling characters.
+/// Uses TimelineView for proper SwiftUI animation lifecycle (no timer leaks).
 private struct MatrixRainCanvas: View {
 
     let size: CGSize
@@ -72,116 +210,155 @@ private struct MatrixRainCanvas: View {
     let color: Color
     let columnCount: Int
 
+    var body: some View {
+        // TimelineView at ~20 FPS - good balance of smoothness vs CPU
+        TimelineView(.animation(minimumInterval: 1.0 / 20.0, paused: !enabled)) { timeline in
+            MatrixRainCanvasInner(
+                size: size,
+                columnCount: columnCount,
+                date: timeline.date
+            )
+        }
+    }
+}
+
+/// Inner view that actually renders and updates - separated to preserve @State across timeline ticks
+private struct MatrixRainCanvasInner: View {
+
+    let size: CGSize
+    let columnCount: Int
+    let date: Date
+
     @State private var columns: [MatrixColumn] = []
-    @State private var tick: Int = 0
+    @State private var lastUpdate: Date = Date()
+    @State private var isInitialized: Bool = false
 
-    // Characters used for the rain (mix of ASCII and Japanese)
-    private let characters: [Character] = Array("01アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン日月火水木金土")
-
-    // Timer for animation at ~15 FPS (low resource usage)
-    private let timer: Timer.TimerPublisher = Timer.publish(every: 1.0/15.0, on: .main, in: .common)
-    @State private var timerCancellable: AnyCancellable?
+    private let cache: MatrixCharacterCache = MatrixCharacterCache.shared
 
     var body: some View {
-        Canvas { context, size in
-            for column in columns {
-                drawColumn(column, in: &context, size: size)
+        Canvas { context, canvasSize in
+            // Draw in depth order - far columns first (behind), near columns last (front)
+            for tier in MatrixDepthTier.allCases {
+                for column in columns where column.depthTier == tier {
+                    drawColumn(column, in: &context, size: canvasSize)
+                }
             }
         }
         .onAppear {
-            initializeColumns()
-            startTimer()
-        }
-        .onDisappear {
-            timerCancellable?.cancel()
-        }
-        .onChange(of: enabled) { newValue in
-            if newValue {
-                startTimer()
-            } else {
-                timerCancellable?.cancel()
+            if !isInitialized {
+                initializeColumns()
+                isInitialized = true
             }
+        }
+        .onChange(of: date) { newDate in
+            updateColumns(at: newDate)
         }
     }
 
-    /// Initialize the falling columns
+    /// Initialize the falling columns with random depth tiers
     private func initializeColumns() {
         let columnWidth: CGFloat = size.width / CGFloat(columnCount)
+        let characters: [Character] = cache.allCharacters
 
         columns = (0..<columnCount).map { index in
-            MatrixColumn(
+            // Random depth tier - weight towards mid tier for balance
+            let tierRoll: Double = Double.random(in: 0...1)
+            let tier: MatrixDepthTier
+            if tierRoll < 0.25 {
+                tier = .far
+            } else if tierRoll < 0.75 {
+                tier = .mid
+            } else {
+                tier = .near
+            }
+
+            return MatrixColumn(
                 x: CGFloat(index) * columnWidth + columnWidth / 2,
-                characters: generateCharacterStream(),
+                characters: (0..<160).map { _ in characters.randomElement() ?? "0" },
+                brightnessJitter: (0..<160).map { _ in Double.random(in: 0.25...1.0) },
                 y: CGFloat.random(in: -size.height...0),
-                speed: CGFloat.random(in: 2...6),
-                trailLength: Int.random(in: 8...20)
+                speed: CGFloat.random(in: tier.speedRange),
+                trailLength: Int.random(in: 60...150),
+                depthTier: tier
             )
         }
+        lastUpdate = Date()
     }
 
-    /// Generate a stream of random characters
-    private func generateCharacterStream() -> [Character] {
-        (0..<30).map { _ in characters.randomElement() ?? "0" }
-    }
+    /// Update column positions based on time delta
+    private func updateColumns(at newDate: Date) {
+        let delta: TimeInterval = newDate.timeIntervalSince(lastUpdate)
+        lastUpdate = newDate
 
-    /// Start the animation timer
-    private func startTimer() {
-        timerCancellable = timer.connect() as? AnyCancellable
+        // Skip if delta is too large (app was backgrounded) or negative
+        guard delta > 0 && delta < 1.0 else { return }
 
-        Timer.scheduledTimer(withTimeInterval: 1.0/15.0, repeats: true) { _ in
-            guard enabled else { return }
-            updateColumns()
-            tick += 1
-        }
-    }
+        let characters: [Character] = cache.allCharacters
 
-    /// Update column positions and occasionally change characters
-    private func updateColumns() {
         for i in columns.indices {
-            // Move down
-            columns[i].y += columns[i].speed
+            let tier: MatrixDepthTier = columns[i].depthTier
+            let stepHeight: CGFloat = tier.stepHeight
+
+            // Move based on time delta
+            columns[i].y += columns[i].speed * CGFloat(delta)
 
             // Reset if off screen
-            if columns[i].y > size.height + CGFloat(columns[i].trailLength * 14) {
-                columns[i].y = CGFloat.random(in: -200 ... -50)
-                columns[i].speed = CGFloat.random(in: 2...6)
-                columns[i].characters = generateCharacterStream()
+            if columns[i].y > size.height + CGFloat(columns[i].trailLength) * stepHeight {
+                columns[i].y = CGFloat.random(in: -300 ... -50)
+                columns[i].speed = CGFloat.random(in: tier.speedRange)
+                columns[i].trailLength = Int.random(in: 60...150)
+                // Regenerate characters
+                columns[i].characters = (0..<160).map { _ in characters.randomElement() ?? "0" }
+                columns[i].brightnessJitter = (0..<160).map { _ in Double.random(in: 0.25...1.0) }
             }
 
-            // Occasionally change a random character
-            if tick % 3 == 0 && Int.random(in: 0...10) < 3 {
-                let charIndex: Int = Int.random(in: 0..<columns[i].characters.count)
-                columns[i].characters[charIndex] = characters.randomElement() ?? "0"
+            // Frequently swap characters (~40% chance per frame, 1-3 chars)
+            if Double.random(in: 0...1) < 0.4 {
+                let swapCount: Int = Int.random(in: 1...3)
+                for _ in 0..<swapCount {
+                    let charIndex: Int = Int.random(in: 0..<columns[i].characters.count)
+                    columns[i].characters[charIndex] = characters.randomElement() ?? "0"
+                }
+            }
+
+            // Frequently re-jitter brightness (~35% chance per frame)
+            if Double.random(in: 0...1) < 0.35 {
+                let jitterCount: Int = Int.random(in: 1...4)
+                for _ in 0..<jitterCount {
+                    let jitterIndex: Int = Int.random(in: 0..<columns[i].brightnessJitter.count)
+                    columns[i].brightnessJitter[jitterIndex] = Double.random(in: 0.25...1.0)
+                }
             }
         }
     }
 
-    /// Draw a single column of characters
+    /// Draw a single column of characters using pre-rendered images
     private func drawColumn(_ column: MatrixColumn, in context: inout GraphicsContext, size: CGSize) {
-        let fontSize: CGFloat = 14
+        let tier: MatrixDepthTier = column.depthTier
+        let stepHeight: CGFloat = tier.stepHeight
+        let opacityMult: Double = tier.opacityMultiplier
 
         for (index, char) in column.characters.prefix(column.trailLength).enumerated() {
-            let charY: CGFloat = column.y - CGFloat(index) * fontSize
+            // Snap Y position to step height increments (full character height)
+            let rawY: CGFloat = column.y - CGFloat(index) * stepHeight
+            let charY: CGFloat = floor(rawY / stepHeight) * stepHeight
 
             // Skip if off screen
-            guard charY > -fontSize && charY < size.height + fontSize else { continue }
+            guard charY > -stepHeight && charY < size.height + stepHeight else { continue }
 
-            // Calculate opacity for trail fade effect
+            // Calculate opacity with jitter and depth multiplier
             let fadeProgress: Double = Double(index) / Double(column.trailLength)
-            let charOpacity: Double = 1.0 - fadeProgress * 0.9  // Fade from 1.0 to 0.1
+            let baseFade: Double = 1.0 - fadeProgress * 0.85
+            let jitter: Double = index < column.brightnessJitter.count ? column.brightnessJitter[index] : 1.0
+            let charOpacity: Double = baseFade * jitter * opacityMult
 
-            // First character is brightest (white-ish)
-            let charColor: Color = index == 0 ? .white : color
+            // Get pre-rendered image for this tier
+            let isHead: Bool = index == 0
+            guard let cgImage = cache.getImage(char: char, isHead: isHead, opacity: charOpacity, tier: tier) else { continue }
 
-            let text: Text = Text(String(char))
-                .font(.system(size: fontSize, weight: .regular, design: .monospaced))
-                .foregroundColor(charColor.opacity(charOpacity))
-
-            context.draw(
-                text,
-                at: CGPoint(x: column.x, y: charY),
-                anchor: .center
-            )
+            // Draw the pre-rendered character
+            let image: Image = Image(decorative: cgImage, scale: 1.0)
+            context.draw(image, at: CGPoint(x: column.x, y: charY), anchor: .center)
         }
     }
 }
@@ -193,9 +370,11 @@ private struct MatrixColumn: Identifiable {
     let id: UUID = UUID()
     var x: CGFloat
     var characters: [Character]
+    var brightnessJitter: [Double]
     var y: CGFloat
     var speed: CGFloat
     var trailLength: Int
+    var depthTier: MatrixDepthTier  // Determines size, speed, opacity
 }
 
 // MARK: - Simple Matrix Background

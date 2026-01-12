@@ -1,9 +1,9 @@
 ---
 title: Add sad trombone on hover for old tasks
-column: todo
-position: zh
+column: done
+position: zl
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T11:35:00Z
 labels: [phase-5, fx, macos]
 ---
 

@@ -1,9 +1,9 @@
 ---
 title: Create TaskDestroyer directory structure
 column: done
-position: a
+position: am
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-10T18:29:14Z
 labels: [phase-1, infra, shared]
 ---
 

@@ -63,7 +63,7 @@ public enum ShameLevel: Sendable {
         case .normal: return "clock"
         case .stale: return "clock.badge.exclamationmark"
         case .rotting: return "flame"
-        case .decomposing: return "skull"
+        case .decomposing: return "bolt.trianglebadge.exclamationmark"
         }
     }
 
@@ -171,6 +171,8 @@ public struct CompactShameTimerView: View {
         self.createdDate = createdDate
     }
 
+    @State private var isPulsing: Bool = false
+
     private var days: Int {
         Int(Date().timeIntervalSince(createdDate) / (24 * 60 * 60))
     }
@@ -190,6 +192,19 @@ public struct CompactShameTimerView: View {
             }
         }
         .foregroundColor(shameLevel.color)
+        .scaleEffect(isPulsing ? 1.1 : 1.0)
+        .opacity(isPulsing ? 1.0 : (shameLevel == .decomposing ? 0.7 : 1.0))
+        .animation(
+            shameLevel.shouldShowEffects
+                ? .easeInOut(duration: shameLevel == .decomposing ? 0.5 : 0.8).repeatForever(autoreverses: true)
+                : .default,
+            value: isPulsing
+        )
+        .onAppear {
+            if shameLevel.shouldShowEffects {
+                isPulsing = true
+            }
+        }
     }
 }
 

@@ -531,18 +531,17 @@ public final class BoardStore: @unchecked Sendable {
         registerUndoForMoveCard(card.slug, fromColumn: oldColumn, fromPosition: oldPosition, toColumn: columnID, toPosition: newPosition)
 
         // TaskDestroyer: emit appropriate event for move
-        if TaskDestroyerSettings.shared.enabled {
-            // Check if we're moving to a "done" column
-            let targetColumn: Column? = board.columns.first { $0.id == columnID }
-            let isLastColumn: Bool = board.columns.last?.id == columnID
-            let movingToDone: Bool = targetColumn.map { isDoneColumn(id: $0.id, name: $0.name, isLastColumn: isLastColumn) } ?? false
+        if TaskDestroyerSettings.shared.enabled && oldColumn != columnID {
+            let isRightmostColumn: Bool = board.columns.last?.id == columnID
 
-            if movingToDone && oldColumn != columnID {
-                // Task completed! Calculate age and emit completion event
+            if isRightmostColumn {
+                // Moving to rightmost column (done!) = SHIPPED! explosion + particles
                 let age: TimeInterval = Date().timeIntervalSince(card.created)
                 TaskDestroyerEventBus.shared.emit(.taskCompleted(title: card.title, age: age))
-            } else if oldColumn != columnID {
-                // Regular column move
+                TaskDestroyerSettings.shared.recordShipment()  // Update streak counter
+                SoundManager.shared.play(.explosion, volume: 0.6)
+            } else {
+                // All other moves = just whoosh
                 TaskDestroyerEventBus.shared.emit(.taskMoved(title: card.title, fromColumn: oldColumn, toColumn: columnID))
             }
         }

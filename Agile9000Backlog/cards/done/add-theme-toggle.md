@@ -1,9 +1,9 @@
 ---
 title: Add theme toggle in settings
-column: todo
-position: p
+column: done
+position: ag
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T09:08:33Z
 labels: [phase-2, ui, shared]
 ---
 

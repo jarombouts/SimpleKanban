@@ -238,6 +238,7 @@ struct BoardView: View {
     }
 
     var body: some View {
+        AutoScreenShakeView {
         VStack(spacing: 0) {
             GeometryReader { geometry in
                 let baseColumnCount: Int = store.board.columns.count
@@ -326,6 +327,7 @@ struct BoardView: View {
                         }
                     }
                     .padding(padding)
+                    .scrollClipDisabled()  // Allow card glow/hover effects to overflow column bounds
                     // Force re-render when archive visibility changes
                     // This ensures the conditional `if store.showArchive` is re-evaluated
                     .id(store.showArchive)
@@ -354,7 +356,20 @@ struct BoardView: View {
                         .allowsHitTesting(false)
                     }
                 }
-                .background(themeBackgroundColor)
+                .background(
+                    ZStack {
+                        themeBackgroundColor
+                        // Matrix rain - only for standard+ violence levels (not corporate safe)
+                        if destroyerSettings.enabled && destroyerSettings.matrixBackgroundEnabled && destroyerSettings.violenceLevel != .corporateSafe {
+                            MatrixRainView(
+                                enabled: true,
+                                opacity: destroyerSettings.violenceLevel == .maximumDestruction ? 0.5 : 0.35,
+                                color: TaskDestroyerColors.success,
+                                columnCount: 40
+                            )
+                        }
+                    }
+                )
             }
                 // Overlay "No results" message when filtering returns no cards
                 .overlay {
@@ -498,6 +513,12 @@ struct BoardView: View {
                     GitStatusIndicator(gitSync: gitSync)
                 }
 
+                // Streak display (only shown when TaskDestroyer is enabled)
+                if destroyerSettings.enabled {
+                    Divider()
+                    StreakDisplayView()
+                }
+
                 // TaskDestroyer mode toggle
                 Divider()
                 ModeToggleButton()
@@ -614,6 +635,22 @@ struct BoardView: View {
                 Text(message)
             }
         }
+        // Particle overlay for TaskDestroyer effects (explosions, confetti, etc.)
+        .overlay {
+            if destroyerSettings.enabled && destroyerSettings.particlesEnabled {
+                ParticleOverlayView()
+                    .allowsHitTesting(false)
+            }
+        }
+        // Floating text overlay for "+1 SHIPPED" and other floating notifications
+        .overlay {
+            if destroyerSettings.enabled {
+                FloatingTextOverlay()
+            }
+        }
+        // Konami code detector - captures arrow keys + B + A for easter egg
+        .konamiCodeEnabled()
+        } // AutoScreenShakeView
     }
 
     // MARK: - Keyboard Navigation
@@ -1122,9 +1159,10 @@ struct ColumnView: View {
             .padding(.top, 12)
 
             // Vertical column name (rotated)
-            Text(column.name)
-                .font(.subheadline)
+            Text(destroyerSettings.displayName(forColumnId: column.id, originalName: column.name))
+                .font(destroyerSettings.enabled ? TaskDestroyerTypography.caption : .subheadline)
                 .fontWeight(.semibold)
+                .foregroundColor(destroyerSettings.enabled ? TaskDestroyerColors.textPrimary : nil)
                 .rotationEffect(.degrees(-90))
                 .fixedSize()
                 .frame(width: collapsedWidth - 16)
@@ -1146,7 +1184,7 @@ struct ColumnView: View {
         .frame(maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(nsColor: .controlBackgroundColor))
+                .fill(destroyerSettings.enabled ? TaskDestroyerColors.darkMatter.opacity(0.7) : Color(nsColor: .controlBackgroundColor))
         )
         .contentShape(Rectangle())
         .onTapGesture {
@@ -1184,10 +1222,21 @@ struct ColumnView: View {
                 .help("Collapse column")
 
                 if destroyerSettings.enabled {
-                    Text(column.name.uppercased())
-                        .font(TaskDestroyerTypography.heading)
-                        .kerning(TaskDestroyerTypography.headingKerning)
-                        .foregroundColor(TaskDestroyerColors.textPrimary)
+                    // Column header with glitch effect at higher violence levels
+                    let headerText: String = destroyerSettings.displayName(forColumnId: column.id, originalName: column.name)
+                    let glitchIntensity: GlitchIntensity = destroyerSettings.violenceLevel == .maximumDestruction ? .medium : .subtle
+
+                    if destroyerSettings.glitchTextEnabled {
+                        GlitchText(headerText, intensity: glitchIntensity)
+                            .font(TaskDestroyerTypography.heading)
+                            .kerning(TaskDestroyerTypography.headingKerning)
+                            .foregroundColor(TaskDestroyerColors.textPrimary)
+                    } else {
+                        Text(headerText)
+                            .font(TaskDestroyerTypography.heading)
+                            .kerning(TaskDestroyerTypography.headingKerning)
+                            .foregroundColor(TaskDestroyerColors.textPrimary)
+                    }
                 } else {
                     Text(column.name)
                         .font(.headline)
@@ -1279,7 +1328,7 @@ struct ColumnView: View {
                                     )
                                 }
                             )
-                            .padding(.horizontal, 12)
+                            .padding(.horizontal, 24)  // Room for glow to overflow
                         }
                     }
 
@@ -1293,6 +1342,7 @@ struct ColumnView: View {
                 .padding(.vertical, 8)
                 .animation(.easeInOut(duration: 0.2), value: dropTargetIndex)
             }
+            .scrollClipDisabled()  // Allow card glow to overflow scroll bounds
             .coordinateSpace(name: "columnScroll")
             .onPreferenceChange(CardFramePreferenceKey.self) { frames in
                 // Use transaction without animation to prevent "multiple updates per frame" warning
@@ -1315,7 +1365,7 @@ struct ColumnView: View {
         .frame(width: columnWidth)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(destroyerSettings.enabled ? TaskDestroyerColors.darkMatter : Color(nsColor: .controlBackgroundColor))
+                .fill(destroyerSettings.enabled ? TaskDestroyerColors.darkMatter.opacity(0.7) : Color(nsColor: .controlBackgroundColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -1565,9 +1615,36 @@ struct CardView: View {
     /// TaskDestroyer settings for theme switching
     @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
 
+    // MARK: - Menacing Animation States
+
+    /// Fixed skew angle (per-card, doesn't animate - based on card hash)
+    @State private var fixedSkewAngle: Double = 0
+
+    /// Vibration offset for rapid jittery movement
+    @State private var vibrationOffset: CGSize = .zero
+
+    /// Border glow intensity for pulsing
+    @State private var glowIntensity: Double = 0.4
+
+    /// Work item for delayed shame trombone
+    @State private var shameWorkItem: DispatchWorkItem?
+
+    /// Track which cards have been shamed this session (static to persist across view updates)
+    private static var shamedCardTitles: Set<String> = []
+
     var body: some View {
         if destroyerSettings.enabled {
-            taskDestroyerCard
+            // Only animating cards get their own TimelineView - non-animating cards have zero overhead
+            if shouldAnimate {
+                TimelineView(.animation(minimumInterval: 1.0 / 20.0)) { timeline in
+                    taskDestroyerCardContent
+                        .onChange(of: timeline.date) { _ in
+                            updateVibration()
+                        }
+                }
+            } else {
+                taskDestroyerCardContent
+            }
         } else {
             standardCard
         }
@@ -1649,13 +1726,62 @@ struct CardView: View {
         isSelected ? TaskDestroyerColors.primaryGlow : borderColor
     }
 
-    private var taskDestroyerCard: some View {
+    /// Compute fixed skew angle based on card hash - consistent per card, doesn't animate
+    /// Returns value in degrees based on shame level and card identity
+    private func computeFixedSkew() -> Double {
+        let hash: Int = card.title.hashValue
+        // Use hash bits to get a consistent "random" angle per card (-1 to +1 range)
+        let baseAngle: Double = Double((hash & 0xFF) - 128) / 128.0
+        let violenceMultiplier: Double = destroyerSettings.violenceLevel.animationMultiplier
+
+        switch shameLevel {
+        case .fresh, .normal:
+            return 0
+        case .stale:
+            return baseAngle * 2.0 * violenceMultiplier  // Up to ±2°
+        case .rotting:
+            return baseAngle * 4.0 * violenceMultiplier  // Up to ±4°
+        case .decomposing:
+            return baseAngle * 6.0 * violenceMultiplier  // Up to ±6°
+        }
+    }
+
+    /// Vibration amplitude in points - how much the card jitters
+    private var vibrationAmplitude: CGFloat {
+        let violenceMultiplier: CGFloat = CGFloat(destroyerSettings.violenceLevel.animationMultiplier)
+        switch shameLevel {
+        case .fresh, .normal:
+            return 0
+        case .stale:
+            return 0.3 * violenceMultiplier  // Barely perceptible
+        case .rotting:
+            return 0.8 * violenceMultiplier  // Noticeable tremor
+        case .decomposing:
+            return 1.8 * violenceMultiplier  // Full on seizure
+        }
+    }
+
+    /// Whether this card should have menacing animations
+    private var shouldAnimate: Bool {
+        destroyerSettings.cardAnimationsEnabled &&
+        (shameLevel == .stale || shameLevel == .rotting || shameLevel == .decomposing)
+    }
+
+    private var taskDestroyerCardContent: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // Title with TaskDestroyer typography
-            Text(card.title)
-                .font(TaskDestroyerTypography.subheading)
-                .foregroundColor(TaskDestroyerColors.textPrimary)
-                .lineLimit(2)
+            // Title with TaskDestroyer typography (glitchy for decomposing tasks)
+            if destroyerSettings.glitchTextEnabled && shameLevel == .decomposing {
+                GlitchText(card.title, intensity: .intense)
+                    .font(TaskDestroyerTypography.subheading)
+                    .foregroundColor(TaskDestroyerColors.danger)
+                    .lineLimit(2)
+                    .glitchEffect(intensity: .medium)
+            } else {
+                Text(card.title)
+                    .font(TaskDestroyerTypography.subheading)
+                    .foregroundColor(shameLevel == .decomposing ? TaskDestroyerColors.danger : TaskDestroyerColors.textPrimary)
+                    .lineLimit(2)
+            }
 
             // Body snippet
             if !card.body.isEmpty {
@@ -1688,21 +1814,85 @@ struct CardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(TaskDestroyerColors.cardBackground)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(TaskDestroyerColors.cardBackground)
+                .overlay(
+                    // Danger overlay for rotting/decomposing
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(shameLevel == .decomposing ? TaskDestroyerColors.danger.opacity(0.1) :
+                              shameLevel == .rotting ? TaskDestroyerColors.danger.opacity(0.05) : .clear)
+                )
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(borderColor, lineWidth: (isHovered || isSelected) ? 2 : 1)
+                .stroke(borderColor, lineWidth: (isHovered || isSelected || shameLevel == .decomposing) ? 2 : 1)
         )
+        .scaleEffect(isHovered ? 1.02 : 1.0)  // Pulse is hover-only now
+        .rotationEffect(.degrees(fixedSkewAngle))
+        .offset(vibrationOffset)  // Raw offset AFTER animation modifier - not interpolated
+        .padding(12)  // Expand frame to capture rotated corners + stroke
+        .drawingGroup()  // Rasterize AFTER rotation for clean antialiasing
+        .padding(-12)  // Restore original layout size
+        // Shadow AFTER drawingGroup so it's not clipped by rasterization bounds
         .shadow(
-            color: (isHovered || isSelected) ? glowColor.opacity(0.4) : .clear,
-            radius: (isHovered || isSelected) ? 8 : 0
+            color: (isHovered || isSelected || shouldAnimate) ? glowColor.opacity(glowIntensity) : .clear,
+            radius: isHovered ? 24 : (isSelected || shouldAnimate) ? 8 : 0
         )
-        .scaleEffect(isHovered ? 1.01 : 1.0)
-        .animation(.easeInOut(duration: 0.15), value: isHovered)
+        .animation(.easeInOut(duration: 0.15), value: isHovered)  // Only animate hover effects
         .onHover { hovering in
             isHovered = hovering
+            handleShameOnHover(hovering: hovering)
         }
+        .onAppear {
+            initializeMenacingState()
+        }
+    }
+
+    /// Handle sad trombone on hover for old cards
+    private func handleShameOnHover(hovering: Bool) {
+        // Cancel any pending shame
+        shameWorkItem?.cancel()
+        shameWorkItem = nil
+
+        guard hovering else { return }
+        guard destroyerSettings.soundsEnabled else { return }
+        guard shameLevel == .rotting || shameLevel == .decomposing else { return }
+        guard !Self.shamedCardTitles.contains(card.title) else { return }
+
+        // Delay 300ms before playing (require sustained hover)
+        let workItem: DispatchWorkItem = DispatchWorkItem { [title = card.title] in
+            // Double-check we haven't shamed this card yet (race condition guard)
+            guard !Self.shamedCardTitles.contains(title) else { return }
+            Self.shamedCardTitles.insert(title)
+            SoundManager.shared.play(.sadTrombone, volume: 0.5)
+        }
+        shameWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: workItem)
+    }
+
+    /// Initialize menacing animation state (called once on appear)
+    private func initializeMenacingState() {
+        guard shouldAnimate else { return }
+
+        // Set fixed skew angle once - this is the permanent tilt based on card identity
+        fixedSkewAngle = computeFixedSkew()
+
+        // Static glow intensity based on shame level - no animation, shadows are expensive
+        glowIntensity = shameLevel == .decomposing ? 0.7 : 0.5
+    }
+
+    /// Update vibration offset based on shared tick (called from onChange)
+    private func updateVibration() {
+        let amplitude: CGFloat = vibrationAmplitude
+        guard amplitude > 0 else { return }
+
+        // Simple random jitter - each card gets fresh random values each tick
+        vibrationOffset = CGSize(
+            width: CGFloat.random(in: -amplitude...amplitude),
+            height: CGFloat.random(in: -amplitude...amplitude)
+        )
     }
 }
 
@@ -3114,6 +3304,79 @@ struct BoardSettingsView: View {
                                             try? store.reorderLabels(newOrder.map { $0.id })
                                         }
                                     ))
+                                }
+                            }
+                            .padding(8)
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .cornerRadius(8)
+                        }
+                    }
+
+                    // MARK: TaskDestroyer Section (only show when enabled)
+                    if TaskDestroyerSettings.shared.enabled {
+                        Divider()
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("TaskDestroyer Effects")
+                                .font(.headline)
+
+                            Text("Toggle effects for performance testing")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            VStack(spacing: 4) {
+                                Toggle("Matrix Rain Background", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.matrixBackgroundEnabled },
+                                    set: { TaskDestroyerSettings.shared.matrixBackgroundEnabled = $0 }
+                                ))
+                                Toggle("Card Animations (vibration, glow, skew)", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.cardAnimationsEnabled },
+                                    set: { TaskDestroyerSettings.shared.cardAnimationsEnabled = $0 }
+                                ))
+                                Toggle("Particles (explosions, confetti)", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.particlesEnabled },
+                                    set: { TaskDestroyerSettings.shared.particlesEnabled = $0 }
+                                ))
+                                Toggle("Screen Shake", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.screenShakeEnabled },
+                                    set: { TaskDestroyerSettings.shared.screenShakeEnabled = $0 }
+                                ))
+                                Toggle("Glitch Text Effects", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.glitchTextEnabled },
+                                    set: { TaskDestroyerSettings.shared.glitchTextEnabled = $0 }
+                                ))
+                                Toggle("Column Name Overrides", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.columnNameOverridesEnabled },
+                                    set: { TaskDestroyerSettings.shared.columnNameOverridesEnabled = $0 }
+                                ))
+                                Toggle("Sound Effects", isOn: Binding(
+                                    get: { TaskDestroyerSettings.shared.soundsEnabled },
+                                    set: { TaskDestroyerSettings.shared.soundsEnabled = $0 }
+                                ))
+
+                                // Sound settings (only when sounds enabled)
+                                if TaskDestroyerSettings.shared.soundsEnabled {
+                                    Divider()
+                                        .padding(.vertical, 4)
+
+                                    // Volume slider
+                                    HStack {
+                                        Image(systemName: "speaker.fill")
+                                            .foregroundStyle(.secondary)
+                                        Slider(
+                                            value: Binding(
+                                                get: { TaskDestroyerSettings.shared.masterVolume },
+                                                set: { TaskDestroyerSettings.shared.masterVolume = $0 }
+                                            ),
+                                            in: 0...1
+                                        )
+                                        Image(systemName: "speaker.wave.3.fill")
+                                            .foregroundStyle(.secondary)
+                                        Text("\(Int(TaskDestroyerSettings.shared.masterVolume * 100))%")
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 35, alignment: .trailing)
+                                    }
                                 }
                             }
                             .padding(8)

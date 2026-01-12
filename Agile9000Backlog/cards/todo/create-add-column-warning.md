@@ -1,9 +1,9 @@
 ---
-title: Create "add column" warning modal
+title: "Create \"add column\" warning modal"
 column: todo
-position: zj
+position: y
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T09:57:43Z
 labels: [phase-5, ui, shared]
 ---
 

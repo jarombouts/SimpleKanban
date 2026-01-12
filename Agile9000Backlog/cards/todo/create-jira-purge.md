@@ -1,9 +1,9 @@
 ---
 title: Create JiraPurge ceremony view
 column: todo
-position: zt
+position: zts
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T09:59:04Z
 labels: [phase-6, ui, shared]
 ---
 

@@ -44,11 +44,11 @@ public final class TaskDestroyerSettings: ObservableObject {
 
     /// Raw storage for violence level (enum can't be directly stored).
     @AppStorage("taskdestroyer_violence_level")
-    public var violenceLevelRaw: String = ViolenceLevel.standard.rawValue
+    public var violenceLevelRaw: String = ViolenceLevel.corporateSafe.rawValue
 
     /// The current violence level setting.
     public var violenceLevel: ViolenceLevel {
-        get { ViolenceLevel(rawValue: violenceLevelRaw) ?? .standard }
+        get { ViolenceLevel(rawValue: violenceLevelRaw) ?? .corporateSafe }
         set {
             violenceLevelRaw = newValue.rawValue
             objectWillChange.send()
@@ -85,11 +85,20 @@ public final class TaskDestroyerSettings: ObservableObject {
 
     /// Whether the matrix rain background is enabled.
     @AppStorage("taskdestroyer_matrix_background_enabled")
-    public var matrixBackgroundEnabled: Bool = false  // Off by default - it's intense
+    public var matrixBackgroundEnabled: Bool = true  // ALWAYS ON BABY
 
     /// Whether glitch text effects are enabled.
     @AppStorage("taskdestroyer_glitch_text_enabled")
     public var glitchTextEnabled: Bool = true
+
+    /// Whether card animations are enabled (vibration, glow, skew for old tasks).
+    @AppStorage("taskdestroyer_card_animations_enabled")
+    public var cardAnimationsEnabled: Bool = true
+
+    /// Whether column names should be overridden with TaskDestroyer names.
+    /// When enabled, "To Do" becomes "FUCK IT, LET'S GO" and "Done" becomes "SHIPPED".
+    @AppStorage("taskdestroyer_column_name_overrides_enabled")
+    public var columnNameOverridesEnabled: Bool = true
 
     /// Raw storage for theme variant (uses TaskDestroyerVariant from ThemeManager).
     @AppStorage("taskdestroyer_theme_variant")
@@ -132,7 +141,7 @@ public final class TaskDestroyerSettings: ObservableObject {
     /// Reset all settings to their default values.
     public func resetToDefaults() {
         enabled = false
-        violenceLevelRaw = ViolenceLevel.standard.rawValue
+        violenceLevelRaw = ViolenceLevel.corporateSafe.rawValue
         soundsEnabled = true
         soundVolume = 0.7
         masterVolume = 0.8
@@ -212,5 +221,41 @@ public final class TaskDestroyerSettings: ObservableObject {
     /// Whether screen shake should occur (master toggle + shake toggle + violence level).
     public var shouldShakeScreen: Bool {
         enabled && screenShakeEnabled && violenceLevel.screenShakeMultiplier > 0
+    }
+
+    /// Whether column name overrides should be applied.
+    public var shouldOverrideColumnNames: Bool {
+        enabled && columnNameOverridesEnabled
+    }
+
+    /// Get the display name for a column, applying TaskDestroyer overrides if enabled.
+    ///
+    /// - Parameters:
+    ///   - columnId: The column ID (e.g., "todo", "in-progress", "done")
+    ///   - originalName: The original column name from the board
+    /// - Returns: The display name (overridden if TaskDestroyer is enabled)
+    public func displayName(forColumnId columnId: String, originalName: String) -> String {
+        guard shouldOverrideColumnNames else { return originalName }
+
+        let lowerId: String = columnId.lowercased()
+        let lowerName: String = originalName.lowercased()
+
+        // Match "To Do" variants
+        if lowerId == "todo" || lowerName == "to do" || lowerName == "todo" {
+            return violenceLevel.todoColumnName()
+        }
+
+        // Match "In Progress" variants
+        if lowerId == "in-progress" || lowerId == "inprogress" || lowerName.contains("progress") {
+            return violenceLevel.inProgressColumnName()
+        }
+
+        // Match "Done" variants
+        if lowerId == "done" || lowerName == "done" || lowerName == "complete" || lowerName == "completed" {
+            return violenceLevel.doneColumnName()
+        }
+
+        // Custom columns keep their original names
+        return originalName
     }
 }

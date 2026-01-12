@@ -29,7 +29,10 @@ let package = Package(
         .target(
             name: "SimpleKanbanCore",
             dependencies: [],
-            path: "Sources/SimpleKanbanCore"
+            path: "Sources/SimpleKanbanCore",
+            resources: [
+                .copy("Resources/Sounds")
+            ]
         ),
         .testTarget(
             name: "SimpleKanbanCoreTests",

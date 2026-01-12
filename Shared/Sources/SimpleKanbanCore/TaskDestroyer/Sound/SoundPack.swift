@@ -111,6 +111,19 @@ public enum SoundPack: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+// MARK: - Bundle Extension for Resources
+
+private extension Bundle {
+    /// Get the resource bundle - works for both SPM (Bundle.module) and Xcode builds
+    static var soundResources: Bundle {
+        #if SWIFT_PACKAGE
+        return Bundle.module
+        #else
+        return Bundle.main
+        #endif
+    }
+}
+
 // MARK: - Sound Pack Assets
 
 /// Helper for managing sound pack assets.
@@ -121,9 +134,11 @@ public struct SoundPackAssets {
         for effect: SoundEffect,
         pack: SoundPack = .default
     ) -> URL? {
+        let bundle: Bundle = Bundle.soundResources
+
         // Try pack-specific directory first
         if let subdirectory: String = pack.subdirectory {
-            if let url: URL = Bundle.main.url(
+            if let url: URL = bundle.url(
                 forResource: pack.filename(for: effect),
                 withExtension: effect.fileExtension,
                 subdirectory: "Sounds/\(subdirectory)"
@@ -132,11 +147,19 @@ public struct SoundPackAssets {
             }
         }
 
-        // Fall back to default sounds
-        return Bundle.main.url(
+        // Try with Sounds subdirectory
+        if let url: URL = bundle.url(
             forResource: effect.filename,
             withExtension: effect.fileExtension,
             subdirectory: "Sounds"
+        ) {
+            return url
+        }
+
+        // Try root of bundle (Xcode sometimes flattens resources)
+        return bundle.url(
+            forResource: effect.filename,
+            withExtension: effect.fileExtension
         )
     }
 

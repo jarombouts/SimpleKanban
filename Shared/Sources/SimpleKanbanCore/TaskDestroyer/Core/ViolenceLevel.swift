@@ -1,10 +1,9 @@
 // ViolenceLevel.swift
 // Controls the intensity of the TaskDestroyer experience.
 //
-// Three levels:
+// Two levels:
 // - Corporate Safe: For when your boss is watching. Mild and professional.
-// - Standard: The full TaskDestroyer experience with explosions and attitude.
-// - MAXIMUM DESTRUCTION: For when you really need to feel something.
+// - MAXIMUM DESTRUCTION: Full chaos mode. Not for the faint of heart.
 
 import Foundation
 
@@ -15,7 +14,6 @@ import Foundation
 /// and personal preference for chaos.
 public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
     case corporateSafe = "corporate_safe"
-    case standard = "standard"
     case maximumDestruction = "maximum_destruction"
 
     public var id: String { rawValue }
@@ -27,10 +25,8 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "Corporate Safe"
-        case .standard:
-            return "Standard"
         case .maximumDestruction:
-            return "MAXIMUM DESTRUCTION"
+            return "MAX"
         }
     }
 
@@ -39,10 +35,8 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "For open offices and screen sharing. Mild language, subtle effects."
-        case .standard:
-            return "The full TaskDestroyer experience. Explosions, gongs, attitude."
         case .maximumDestruction:
-            return "Extra particles, louder sounds, more profanity. Not for the faint of heart."
+            return "Full chaos. Extra particles, louder sounds, unhinged language."
         }
     }
 
@@ -53,7 +47,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
     public var particleMultiplier: Double {
         switch self {
         case .corporateSafe: return 0.5
-        case .standard: return 1.0
         case .maximumDestruction: return 2.0
         }
     }
@@ -63,7 +56,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
     public var volumeMultiplier: Float {
         switch self {
         case .corporateSafe: return 0.6
-        case .standard: return 1.0
         case .maximumDestruction: return 1.2
         }
     }
@@ -73,7 +65,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
     public var screenShakeMultiplier: Double {
         switch self {
         case .corporateSafe: return 0.0  // No shake in corporate mode - too distracting
-        case .standard: return 1.0
         case .maximumDestruction: return 1.5
         }
     }
@@ -83,7 +74,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
     public var animationMultiplier: Double {
         switch self {
         case .corporateSafe: return 0.8
-        case .standard: return 1.0
         case .maximumDestruction: return 1.3
         }
     }
@@ -95,8 +85,8 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "TO DO"
-        case .standard, .maximumDestruction:
-            return "FUCK IT, LET'S GO"
+        case .maximumDestruction:
+            return "READY TO DESTROY"
         }
     }
 
@@ -105,10 +95,8 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "IN PROGRESS"
-        case .standard:
-            return "DESTROYING"
         case .maximumDestruction:
-            return "ANNIHILATING"
+            return "LET'S GOOOO"
         }
     }
 
@@ -117,8 +105,8 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "DONE"
-        case .standard, .maximumDestruction:
-            return "SHIPPED"
+        case .maximumDestruction:
+            return "SHIPPED SHIT"
         }
     }
 
@@ -127,8 +115,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "Task completed!"
-        case .standard:
-            return "SHIPPED!"
         case .maximumDestruction:
             return "OBLITERATED!"
         }
@@ -139,8 +125,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "Archived"
-        case .standard:
-            return "BURIED"
         case .maximumDestruction:
             return "INCINERATED"
         }
@@ -151,8 +135,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return "Deleted"
-        case .standard:
-            return "DESTROYED"
         case .maximumDestruction:
             return "VAPORIZED"
         }
@@ -163,8 +145,6 @@ public enum ViolenceLevel: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .corporateSafe:
             return ["Great work!", "Keep it up!", "Progress!", "Nice job!"].randomElement()!
-        case .standard:
-            return ["SHIP IT!", "LET'S GO!", "CRUSHING IT!", "UNSTOPPABLE!"].randomElement()!
         case .maximumDestruction:
             return ["ABSOLUTE CARNAGE!", "TOTAL DOMINATION!", "THEY NEVER SAW IT COMING!", "WITNESS ME!"].randomElement()!
         }

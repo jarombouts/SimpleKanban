@@ -1,9 +1,9 @@
 ---
 title: Implement KonamiCode detector
-column: todo
+column: done
 position: zr
-created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+created: 2025-12-26T12:00:00Z
+modified: 2026-01-12T12:00:00Z
 labels: [phase-6, infra, ios, macos]
 ---
 

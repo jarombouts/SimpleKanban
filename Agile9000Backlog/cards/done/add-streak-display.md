@@ -1,9 +1,9 @@
 ---
 title: Add streak display in toolbar
-column: todo
-position: zm
-created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+column: done
+position: zms
+created: 2026-01-05T12:00:00Z
+modified: 2026-01-12T11:45:00Z
 labels: [phase-5, ui, shared]
 ---
 

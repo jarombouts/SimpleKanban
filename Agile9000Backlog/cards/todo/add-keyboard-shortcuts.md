@@ -2,8 +2,8 @@
 title: Add keyboard shortcuts for common actions
 column: todo
 position: zzh
-created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+created: 2026-01-08T12:00:00Z
+modified: 2026-01-08T12:00:00Z
 labels: [polish, ui, macos]
 ---
 

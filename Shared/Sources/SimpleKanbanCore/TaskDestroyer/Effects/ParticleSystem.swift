@@ -83,6 +83,11 @@ public final class ParticleSystem: ObservableObject {
                 spawnConfetti(count: count * 5, jiraLogos: true)
             }
 
+        case .konamiCodeEntered:
+            // MAXIMUM DESTRUCTION - fireworks + confetti explosion!
+            spawnFireworks(count: 10)
+            spawnConfetti(count: 150)
+
         default:
             break
         }
@@ -166,10 +171,10 @@ public class ParticleScene: SKScene {
             addChild(spark)
 
             // Animate outward then fade
-            let move: SKAction = SKAction.move(by: CGVector(dx: dx, dy: dy), duration: 0.5)
+            let move: SKAction = SKAction.move(by: CGVector(dx: dx, dy: dy), duration: 1.5)
             move.timingMode = .easeOut
-            let fade: SKAction = SKAction.fadeOut(withDuration: 0.3)
-            let scale: SKAction = SKAction.scale(to: 0.1, duration: 0.5)
+            let fade: SKAction = SKAction.fadeOut(withDuration: 0.9)
+            let scale: SKAction = SKAction.scale(to: 0.1, duration: 1.5)
             let group: SKAction = SKAction.group([move, fade, scale])
             let remove: SKAction = SKAction.removeFromParent()
 

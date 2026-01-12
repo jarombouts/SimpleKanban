@@ -1,9 +1,9 @@
 ---
 title: Orchestrate task completion animation sequence
-column: todo
+column: done
 position: ze
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-10T14:30:00Z
 labels: [phase-4, integration, shared]
 ---
 

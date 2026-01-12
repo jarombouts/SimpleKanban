@@ -89,14 +89,9 @@ public enum SoundEffect: String, CaseIterable, Sendable {
         }
     }
 
-    /// The file extension (default mp3, could be wav for short sounds)
+    /// The file extension (all sounds are WAV from Freesound)
     public var fileExtension: String {
-        switch self {
-        case .pop, .confirm, .whoosh, .keyboardClack:
-            return "wav"  // Short UI sounds work better as WAV
-        default:
-            return "mp3"
-        }
+        return "wav"
     }
 
     /// Default volume for this sound (0.0 - 1.0)

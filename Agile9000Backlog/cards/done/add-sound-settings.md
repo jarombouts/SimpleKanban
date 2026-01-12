@@ -1,9 +1,9 @@
 ---
 title: Add sound toggle and volume control
-column: todo
-position: u
+column: done
+position: ae
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T12:36:46Z
 labels: [phase-3, ui, shared]
 ---
 

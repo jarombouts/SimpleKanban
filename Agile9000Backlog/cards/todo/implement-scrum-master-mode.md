@@ -1,9 +1,9 @@
 ---
 title: Implement ScrumMasterMode punishment
 column: todo
-position: zs
+position: ztm
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T09:59:01Z
 labels: [phase-6, fx, shared]
 ---
 

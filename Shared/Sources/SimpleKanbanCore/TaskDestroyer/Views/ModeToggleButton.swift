@@ -13,7 +13,6 @@ import SwiftUI
 ///
 /// Shows a flame icon that indicates the current mode:
 /// - Gray flame: Standard mode (TaskDestroyer disabled)
-/// - Orange flame: TaskDestroyer enabled, standard violence
 /// - Blue flame: Corporate Safe mode
 /// - Red flame: MAXIMUM DESTRUCTION
 ///
@@ -40,17 +39,13 @@ public struct ModeToggleButton: View {
 
             Divider()
 
-            // TaskDestroyer modes
+            // TaskDestroyer modes - only Corporate Safe and MAX
             Button(action: { setMode(.corporateSafe) }) {
                 Label("Corporate Safe", systemImage: isMode(.corporateSafe) ? "checkmark.circle.fill" : "circle")
             }
 
-            Button(action: { setMode(.standard) }) {
-                Label("TaskDestroyer", systemImage: isMode(.standard) ? "checkmark.circle.fill" : "circle")
-            }
-
             Button(action: { setMode(.maximum) }) {
-                Label("MAXIMUM DESTRUCTION", systemImage: isMode(.maximum) ? "checkmark.circle.fill" : "circle")
+                Label("MAX", systemImage: isMode(.maximum) ? "checkmark.circle.fill" : "circle")
             }
         } label: {
             HStack(spacing: 4) {
@@ -78,7 +73,7 @@ public struct ModeToggleButton: View {
     // MARK: - Private Helpers
 
     private enum Mode {
-        case off, corporateSafe, standard, maximum
+        case off, corporateSafe, maximum
     }
 
     private func isMode(_ mode: Mode) -> Bool {
@@ -88,8 +83,6 @@ public struct ModeToggleButton: View {
             return !settings.enabled
         case .corporateSafe:
             return settings.violenceLevel == .corporateSafe
-        case .standard:
-            return settings.violenceLevel == .standard
         case .maximum:
             return settings.violenceLevel == .maximumDestruction
         }
@@ -100,8 +93,6 @@ public struct ModeToggleButton: View {
         switch settings.violenceLevel {
         case .corporateSafe:
             return .blue
-        case .standard:
-            return TaskDestroyerColors.primary
         case .maximumDestruction:
             return TaskDestroyerColors.danger
         }
@@ -111,8 +102,6 @@ public struct ModeToggleButton: View {
         switch settings.violenceLevel {
         case .corporateSafe:
             return "SAFE"
-        case .standard:
-            return "ON"
         case .maximumDestruction:
             return "MAX"
         }
@@ -125,10 +114,8 @@ public struct ModeToggleButton: View {
         switch settings.violenceLevel {
         case .corporateSafe:
             return "Corporate Safe mode - subtle effects"
-        case .standard:
-            return "TaskDestroyer mode - standard effects"
         case .maximumDestruction:
-            return "MAXIMUM DESTRUCTION - all effects cranked to 11"
+            return "MAX - full chaos mode"
         }
     }
 
@@ -140,9 +127,6 @@ public struct ModeToggleButton: View {
             case .corporateSafe:
                 settings.enabled = true
                 settings.violenceLevel = .corporateSafe
-            case .standard:
-                settings.enabled = true
-                settings.violenceLevel = .standard
             case .maximum:
                 settings.enabled = true
                 settings.violenceLevel = .maximumDestruction
@@ -220,7 +204,6 @@ public struct ModeIndicator: View {
         guard settings.enabled else { return .gray }
         switch settings.violenceLevel {
         case .corporateSafe: return .blue
-        case .standard: return TaskDestroyerColors.primary
         case .maximumDestruction: return TaskDestroyerColors.danger
         }
     }

@@ -1,9 +1,9 @@
 ---
 title: Respect system mute and platform audio
 column: todo
-position: v
+position: yc
 created: 2026-01-10T12:00:00Z
-modified: 2026-01-10T12:00:00Z
+modified: 2026-01-12T12:41:38Z
 labels: [phase-3, integration, ios, macos]
 ---
 
