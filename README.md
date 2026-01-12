@@ -8,7 +8,7 @@
 
 ---
 
-A native macOS/iOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows.
+A native macOS/iOS Kanban board that stores everything as plain markdown files -- perfect for git-based workflows and/or keeping track of what the hell your coding agents are up to.
 
 ![macOS](https://img.shields.io/badge/macOS-14.0+-blue)
 ![iOS](https://img.shields.io/badge/iOS_(iPad)-17.0+-blue)
@@ -271,4 +271,4 @@ All contributions welcome!
 
 [WTFPL](LICENSE) -- Do What The Fuck You Want To Public License.
 
-Made with caffeine in The Netherlands by [Strange Loop Software](https://github.com/jarombouts).
+Made by repeatedly pulling the arm of your favourite LLM slot machine... so mostly by Claude Code, prompted in The Netherlands by [Strange Loop Software](https://github.com/jarombouts).
