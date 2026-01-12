@@ -31,9 +31,6 @@ public struct StreakDisplayView: View {
     /// Whether the glow animation is active.
     @State private var isGlowing: Bool = false
 
-    /// Show debug controls for testing streak levels.
-    @State private var showDebugPopover: Bool = false
-
     /// Timer for continuous confetti at 5+ day streaks.
     @State private var confettiTimer: Timer? = nil
 
@@ -81,13 +78,6 @@ public struct StreakDisplayView: View {
             radius: glowRadius * 1.5
         )
         .help(tooltipText)
-        .onTapGesture(count: 2) {
-            // Double-click to show debug controls
-            showDebugPopover = true
-        }
-        .popover(isPresented: $showDebugPopover) {
-            debugPopover
-        }
         .onAppear {
             startGlowAnimation()
             startConfettiIfNeeded()
@@ -101,60 +91,6 @@ public struct StreakDisplayView: View {
             confettiTimer?.invalidate()
             confettiTimer = nil
         }
-    }
-
-    // MARK: - Debug Popover
-
-    @ViewBuilder
-    private var debugPopover: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Streak Debug")
-                .font(.headline)
-                .foregroundColor(TaskDestroyerColors.textPrimary)
-
-            Divider()
-
-            // Current values
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Current: \(settings.currentStreak) days")
-                Text("Longest: \(settings.longestStreak) days")
-                Text("Total: \(settings.totalShipped) shipped")
-            }
-            .font(.caption)
-            .foregroundColor(TaskDestroyerColors.textSecondary)
-
-            Divider()
-
-            // Quick set buttons
-            Text("Set streak to:")
-                .font(.caption)
-                .foregroundColor(TaskDestroyerColors.textSecondary)
-
-            HStack(spacing: 8) {
-                ForEach([0, 1, 2, 3, 4, 5], id: \.self) { value in
-                    Button("\(value)") {
-                        settings.currentStreak = value
-                        if value > settings.longestStreak {
-                            settings.longestStreak = value
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                }
-            }
-
-            // Reset button
-            Button("Reset All Stats") {
-                settings.resetStats()
-                showDebugPopover = false
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .foregroundColor(TaskDestroyerColors.danger)
-        }
-        .padding()
-        .frame(width: 220)
-        .background(TaskDestroyerColors.elevated)
     }
 
     // MARK: - Computed Properties
@@ -248,8 +184,6 @@ public struct StreakDisplayView: View {
         lines.append("Current streak: \(currentStreak) days")
         lines.append("Longest streak: \(settings.longestStreak) days")
         lines.append("Total shipped: \(settings.totalShipped)")
-        lines.append("")
-        lines.append("Double-click for debug controls")
 
         if isStreakAtRisk {
             lines.append("")

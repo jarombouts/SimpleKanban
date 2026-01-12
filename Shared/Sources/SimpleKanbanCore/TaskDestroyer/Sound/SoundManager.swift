@@ -157,9 +157,13 @@ public final class SoundManager: ObservableObject {
     /// - Parameters:
     ///   - effect: The sound effect to play
     ///   - volume: Volume override (0.0 - 1.0). If nil, uses default volume for the effect.
-    public func play(_ effect: SoundEffect, volume: Float? = nil) {
-        guard isEnabled && TaskDestroyerSettings.shared.enabled else { return }
-        guard currentPack.soundsEnabled else { return }
+    ///   - ignoreSettings: If true, bypasses ALL settings and plays at raw volume. Use for MAXIMUM IMPACT.
+    public func play(_ effect: SoundEffect, volume: Float? = nil, ignoreSettings: Bool = false) {
+        // IGNORESETTINGS = NUCLEAR OPTION. NO MERCY.
+        if !ignoreSettings {
+            guard isEnabled && TaskDestroyerSettings.shared.enabled else { return }
+            guard currentPack.soundsEnabled else { return }
+        }
 
         // Debounce rapid plays (min 50ms between same sound)
         if let lastPlay: Date = lastPlayTime[effect],
@@ -169,10 +173,16 @@ public final class SoundManager: ObservableObject {
         lastPlayTime[effect] = Date()
 
         // Calculate final volume
-        let effectVolume: Float = volume ?? effect.defaultVolume
-        let packMultiplier: Float = currentPack.volumeMultiplier
-        let violenceMultiplier: Float = TaskDestroyerSettings.shared.violenceLevel.volumeMultiplier
-        let finalVolume: Float = effectVolume * masterVolume * packMultiplier * violenceMultiplier
+        let finalVolume: Float
+        if ignoreSettings {
+            // RAW UNFILTERED VOLUME
+            finalVolume = volume ?? effect.defaultVolume
+        } else {
+            let effectVolume: Float = volume ?? effect.defaultVolume
+            let packMultiplier: Float = currentPack.volumeMultiplier
+            let violenceMultiplier: Float = TaskDestroyerSettings.shared.violenceLevel.volumeMultiplier
+            finalVolume = effectVolume * masterVolume * packMultiplier * violenceMultiplier
+        }
 
         // Get player
         if let player: AVAudioPlayer = getPlayer(for: effect) {

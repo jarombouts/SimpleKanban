@@ -1,9 +1,9 @@
 ---
 title: Add smoke effect for decomposing tasks
-column: todo
-position: zn
+column: done
+position: as
 created: 2025-11-11T12:00:00Z
-modified: 2026-01-12T12:48:27Z
+modified: 2026-01-12T14:36:53Z
 labels: [phase-5, fx, shared]
 ---
 

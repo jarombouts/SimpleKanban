@@ -19,6 +19,18 @@ extension String: @retroactive Identifiable {
     public var id: String { self }
 }
 
+// MARK: - PendingMeetingCard
+
+/// Data for a card pending meeting warning approval.
+/// Identifiable so it works with sheet(item:) pattern.
+struct PendingMeetingCard: Identifiable {
+    let id: UUID = UUID()
+    let title: String
+    let column: String
+    let body: String
+    let labels: [String]
+}
+
 // MARK: - BoardView
 
 /// Main board view displaying columns horizontally.
@@ -100,6 +112,13 @@ struct BoardView: View {
 
     /// Whether to show error alert
     @State private var showErrorAlert: Bool = false
+
+    /// Pending card creation data when meeting warning is shown (TaskDestroyer feature)
+    /// Using a struct so it can be used with sheet(item:) for proper timing
+    @State private var pendingMeetingCard: PendingMeetingCard? = nil
+
+    /// Whether to show the Jira Purge ceremony (TaskDestroyer feature)
+    @State private var showJiraPurge: Bool = false
 
     /// TaskDestroyer settings for theme switching
     @ObservedObject private var destroyerSettings: TaskDestroyerSettings = TaskDestroyerSettings.shared
@@ -517,6 +536,14 @@ struct BoardView: View {
                 if destroyerSettings.enabled {
                     Divider()
                     StreakDisplayView()
+
+                    // Jira Purge button - mass delete old tasks
+                    Button {
+                        showJiraPurge = true
+                    } label: {
+                        Image(systemName: "flame.circle")
+                    }
+                    .help("Perform The Jira Purge (delete old tasks)")
                 }
 
                 // TaskDestroyer mode toggle
@@ -561,6 +588,18 @@ struct BoardView: View {
                 columnID: columnID,
                 labels: store.board.labels,
                 onSave: { title, column, body, labels in
+                    // TaskDestroyer: Check for meeting keywords and show warning
+                    if destroyerSettings.enabled && MeetingDetector.containsMeetingKeyword(title) {
+                        pendingMeetingCard = PendingMeetingCard(
+                            title: title,
+                            column: column,
+                            body: body,
+                            labels: labels
+                        )
+                        addingCardToColumn = nil
+                        return
+                    }
+
                     do {
                         try store.addCard(title: title, toColumn: column, body: body, labels: labels)
                         addingCardToColumn = nil
@@ -619,6 +658,43 @@ struct BoardView: View {
                 store: store,
                 onDismiss: {
                     showBoardSettings = false
+                }
+            )
+        }
+        // TaskDestroyer: Meeting warning modal when creating meeting-related tasks
+        .sheet(item: $pendingMeetingCard) { pending in
+            MeetingWarningModal(
+                taskTitle: pending.title,
+                onConfirm: {
+                    // User wants to create the meeting task anyway
+                    do {
+                        try store.addCard(
+                            title: pending.title,
+                            toColumn: pending.column,
+                            body: pending.body,
+                            labels: pending.labels
+                        )
+                        selectSingle(pending.title)
+                    } catch {
+                        errorMessage = "Failed to create card: \(error.localizedDescription)"
+                        showErrorAlert = true
+                    }
+                    pendingMeetingCard = nil
+                },
+                onCancel: {
+                    // User cancelled, don't create the card
+                    pendingMeetingCard = nil
+                }
+            )
+            .frame(width: 450)
+        }
+        // TaskDestroyer: The Jira Purge ceremony for mass-deleting old tasks
+        .sheet(isPresented: $showJiraPurge) {
+            let oldTasks: [Card] = store.cards.filter { $0.isEligibleForPurge }
+            JiraPurgeView(
+                oldTasks: oldTasks,
+                onDelete: { card in
+                    try? store.deleteCards([card])
                 }
             )
         }
@@ -1629,6 +1705,9 @@ struct CardView: View {
     /// Work item for delayed shame trombone
     @State private var shameWorkItem: DispatchWorkItem?
 
+    /// Timer for continuous smoke effect on stale+ cards
+    @State private var smokeTimer: Timer?
+
     /// Track which cards have been shamed this session (static to persist across view updates)
     private static var shamedCardTitles: Set<String> = []
 
@@ -1847,7 +1926,84 @@ struct CardView: View {
         }
         .onAppear {
             initializeMenacingState()
+            startSmokeIfNeeded()
         }
+        .onDisappear {
+            stopSmoke()
+        }
+        // Smoke effect - GeometryReader reports card position for particle spawning
+        .background(
+            GeometryReader { geo in
+                Color.clear
+                    .onChange(of: geo.frame(in: .global)) { frame in
+                        // Store card center for smoke spawning
+                        cardCenterForSmoke = CGPoint(
+                            x: frame.midX,
+                            y: frame.minY + 20  // Near top of card
+                        )
+                    }
+                    .onAppear {
+                        let frame: CGRect = geo.frame(in: .global)
+                        cardCenterForSmoke = CGPoint(
+                            x: frame.midX,
+                            y: frame.minY + 20
+                        )
+                    }
+            }
+        )
+    }
+
+    /// Card center position for smoke spawning (stored from GeometryReader)
+    @State private var cardCenterForSmoke: CGPoint = .zero
+
+    /// Start smoke timer for stale/rotting/decomposing cards
+    private func startSmokeIfNeeded() {
+        guard destroyerSettings.enabled else { return }
+        guard destroyerSettings.particlesEnabled else { return }
+        guard shameLevel.shouldShowEffects else { return }
+
+        // Determine smoke frequency based on shame level
+        let interval: TimeInterval = switch shameLevel {
+        case .stale: 2.0      // Light smoke every 2s
+        case .rotting: 1.2    // More smoke
+        case .decomposing: 0.7 // Heavy smoke
+        default: 0
+        }
+
+        guard interval > 0 else { return }
+
+        smokeTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { _ in
+            Task { @MainActor in
+                self.spawnSmokeAtCard()
+            }
+        }
+
+        // Initial puff
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5s
+            self.spawnSmokeAtCard()
+        }
+    }
+
+    /// Stop smoke timer
+    private func stopSmoke() {
+        smokeTimer?.invalidate()
+        smokeTimer = nil
+    }
+
+    /// Spawn smoke at the card's position
+    private func spawnSmokeAtCard() {
+        guard cardCenterForSmoke != .zero else { return }
+
+        // Convert SwiftUI coordinates to particle system coordinates
+        // The particle scene's Y is inverted (0 at bottom)
+        let sceneSize: CGSize = ParticleSystem.shared.scene.size
+        let smokePoint: CGPoint = CGPoint(
+            x: cardCenterForSmoke.x,
+            y: sceneSize.height - cardCenterForSmoke.y
+        )
+
+        ParticleSystem.shared.spawnSmoke(at: smokePoint)
     }
 
     /// Handle sad trombone on hover for old cards

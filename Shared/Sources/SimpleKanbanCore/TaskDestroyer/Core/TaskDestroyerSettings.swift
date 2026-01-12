@@ -132,6 +132,16 @@ public final class TaskDestroyerSettings: ObservableObject {
         }
     }
 
+    // MARK: - Meeting Stats
+
+    /// Number of meetings that were prevented (user clicked "cancel").
+    @AppStorage("taskdestroyer_meetings_prevented")
+    public var meetingsPrevented: Int = 0
+
+    /// Number of meetings that were created anyway despite warning.
+    @AppStorage("taskdestroyer_meetings_not_prevented")
+    public var meetingsNotPrevented: Int = 0
+
     // MARK: - Initialization
 
     private init() {}

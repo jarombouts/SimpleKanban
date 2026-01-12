@@ -80,6 +80,7 @@ public enum SoundEffect: String, CaseIterable, Sendable {
     public var filename: String {
         switch self {
         case .sadTrombone: return "sad_trombone"
+        case .airhorn: return "airhorn"
         case .keyboardClack: return "keyboard_clack"
         case .errorBuzzer: return "error_buzzer"
         case .horrorSting: return "horror_sting"

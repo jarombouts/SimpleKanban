@@ -15,13 +15,13 @@ public enum ShameLevel: Sendable {
     /// Less than 24 hours - still fresh
     case fresh
 
-    /// 1-2 days - normal age
+    /// 1-4 days - normal age
     case normal
 
-    /// 3-6 days - getting stale
+    /// 5-9 days - getting stale, smoke starts
     case stale
 
-    /// 7-29 days - actively rotting
+    /// 10-29 days - actively rotting
     case rotting
 
     /// 30+ days - decomposing
@@ -32,10 +32,10 @@ public enum ShameLevel: Sendable {
         let days: Int = Int(age / (24 * 60 * 60))
         switch days {
         case 0: return .fresh
-        case 1...2: return .normal
-        case 3...6: return .stale
-        case 7...29: return .rotting
-        default: return .decomposing
+        case 1...4: return .normal
+        case 5...9: return .stale      // 5+ days = smoldering starts
+        case 10...29: return .rotting  // 10+ days = actively rotting
+        default: return .decomposing   // 30+ days = decomposing
         }
     }
 
